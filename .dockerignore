@@ -1,1 +1,7 @@
 infra/docker/*
+infra/k8s/*
+.git
+.gitignore
+TaskFile.yml
+.dockerignore
+README.md
