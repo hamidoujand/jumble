@@ -4,6 +4,8 @@ version: "3"
 
 vars:
   GREETING: Hello, World!
+  VERSION: 0.0.1
+  JUMBLE_IMAGE: localhost/hamidoujand/jumble:{{.VERSION}}
 
 tasks:
   default:
@@ -14,3 +16,13 @@ tasks:
     cmds:
       - go run cmd/main.go
     silent: true
+
+  jumble:
+    cmds:
+      - docker buildx build
+        -f infra/docker/jumble.dockerfile
+        -t {{.JUMBLE_IMAGE}}
+        --build-arg BUILD={{.VERSION}}
+        --build-arg CREATED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        --load
+        .
