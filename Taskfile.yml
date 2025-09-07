@@ -8,10 +8,11 @@ vars:
   JUMBLE_IMAGE: localhost/hamidoujand/jumble:{{.VERSION}}
 
 tasks:
-  default:
-    cmds:
-      - echo "{{.GREETING}}"
+  tidy:
     silent: true
+    cmds:
+      - go mod tidy
+      - go mod vendor
   run:
     cmds:
       - go run cmd/main.go

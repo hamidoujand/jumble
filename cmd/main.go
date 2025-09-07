@@ -2,11 +2,15 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"os/signal"
 	"runtime"
 	"syscall"
+	"time"
 
+	"github.com/ardanlabs/conf/v3"
 	"github.com/hamidoujand/jumble/pkg/logger"
 )
 
@@ -37,6 +41,34 @@ func main() {
 
 func run(ctx context.Context, log logger.Logger) error {
 	log.Info(ctx, "run", "build", build, "GOMAXPROCS", runtime.GOMAXPROCS(0))
+
+	//configuration
+	cfg := struct {
+		Web struct {
+			ReadTimeout       time.Duration `conf:"default:10s"`
+			ReadHeaderTimeout time.Duration `conf:"default:5s"`
+			WriteTimeout      time.Duration `conf:"default:30s"`
+			IdleTimeout       time.Duration `conf:"default:120s"`
+		}
+	}{}
+
+	const prefix = "JUMBLE"
+	help, err := conf.Parse(prefix, &cfg)
+	if err != nil {
+		if errors.Is(err, conf.ErrHelpWanted) {
+			//print help
+			fmt.Println(help)
+			return nil
+		}
+		return fmt.Errorf("parsing conf: %w", err)
+	}
+
+	out, err := conf.String(&cfg)
+	if err != nil {
+		return fmt.Errorf("conf to string: %w", err)
+	}
+
+	log.Info(ctx, "app configuration", "cfg", out)
 
 	shutdown := make(chan os.Signal, 1)
 
