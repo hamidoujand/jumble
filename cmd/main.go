@@ -16,6 +16,8 @@ import (
 	"github.com/hamidoujand/jumble/pkg/logger"
 )
 
+//TODOS: add TLS support.
+
 var build = "development"
 
 func main() {
@@ -47,11 +49,12 @@ func run(ctx context.Context, log logger.Logger) error {
 	//configuration
 	cfg := struct {
 		Web struct {
-			ReadTimeout       time.Duration `conf:"default:10s"`
-			ReadHeaderTimeout time.Duration `conf:"default:5s"`
-			WriteTimeout      time.Duration `conf:"default:30s"`
-			IdleTimeout       time.Duration `conf:"default:120s"`
-			DebugHost         string        `conf:"default:0.0.0.0:3000"`
+			ReadTimeout    time.Duration `conf:"default:10s"`
+			WriteTimeout   time.Duration `conf:"default:30s"`
+			IdleTimeout    time.Duration `conf:"default:120s"`
+			ShutdownTimout time.Duration `conf:"default:120s"`
+			DebugHost      string        `conf:"default:0.0.0.0:3000"`
+			APIHost        string        `conf:"default:0.0.0.0:8000"`
 		}
 	}{}
 
@@ -83,6 +86,18 @@ func run(ctx context.Context, log logger.Logger) error {
 		}
 	}()
 
+	//==========================================================================
+	// API Server
+	server := http.Server{
+		Addr:         cfg.Web.APIHost,
+		Handler:      nil,
+		ReadTimeout:  cfg.Web.ReadTimeout,
+		WriteTimeout: cfg.Web.WriteTimeout,
+		IdleTimeout:  cfg.Web.IdleTimeout,
+		ErrorLog:     logger.NewStdLogger(log, logger.LevelError),
+	}
+
+	serverErrs := make(chan error, 1)
 	shutdown := make(chan os.Signal, 1)
 
 	//os.Interrupt is going to be platform independent for example on UNIX it mapped to "syscall.SIGINT" on Windows to
@@ -90,6 +105,28 @@ func run(ctx context.Context, log logger.Logger) error {
 	//NOTE: you can skip "syscall.SIGINT" and only use os.Interrupt.
 	signal.Notify(shutdown, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
-	<-shutdown
+	go func() {
+		log.Info(ctx, "API server starting", "host", cfg.Web.APIHost)
+		if err := server.ListenAndServe(); err != nil {
+			serverErrs <- fmt.Errorf("listenAndServe: %w", err)
+		}
+	}()
+
+	select {
+	case err := <-serverErrs:
+		//something went wrong when starting the server
+		return fmt.Errorf("server error: %w", err)
+	case sig := <-shutdown:
+		log.Info(ctx, "server received a shutdown signal", "signal", sig)
+		defer log.Info(ctx, "server completed the shutdown process", "signal", sig)
+
+		ctx, cancel := context.WithTimeout(ctx, cfg.Web.ShutdownTimout)
+		defer cancel()
+
+		if err := server.Shutdown(ctx); err != nil {
+			server.Close()
+			return fmt.Errorf("failed to gracefully shutdown the server: %w", err)
+		}
+	}
 	return nil
 }
