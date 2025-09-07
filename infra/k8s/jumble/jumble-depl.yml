@@ -1,0 +1,93 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: jumble-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jumble
+  namespace: jumble-system
+
+spec:
+  replicas: 1
+  strategy:
+    # type: Recreate # all pods will terminate then new version of pods will start.
+    type: RollingUpdate #gradual update.
+  selector:
+    matchLabels:
+      app: jumble
+  template:
+    metadata:
+      labels:
+        app: jumble
+    spec:
+      terminationGracePeriodSeconds: 60
+      # skip creating a separate network namespace for the pod.
+      # Instead, the pod's containers will use the network namespace of the node (host machine) they are running on.
+      # If a container in the pod listens on port 8080, it will be accessible on the node's IP address (<node-ip>:8080).
+
+      # why to use it?
+      # 1-performance
+      # 2-Host port access
+
+      # major drawbacks:
+      # - security risk
+      # - port conflicts
+
+      hostNetwork: true
+      # when you use host network stack then the DNS policy of host is going to be used
+      # This means the pod would not be able to resolve internal Kubernetes DNS names (like my-svc.my-namespace.svc.cluster.local).
+      # The ClusterFirstWithHostNet policy explicitly tells Kubernetes: "Even though I'm using the host's network,
+      # please still use the cluster's internal DNS server (kube-dns/CoreDNS) for name resolution first."
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+        - name: jumble
+          image: localhost/hamidoujand/jumble:0.0.1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: jumble
+              containerPort: 8000
+          resources:
+            # from 100ms time slice we want 250ms to this service, so single thread Go application.
+            requests:
+              cpu: "250m"
+              memory: "200Mi"
+
+            limits:
+              cpu: "250m"
+              memory: "200Mi"
+
+          env:
+            # turn off the automatic GC.
+            - name: GOGC
+              value: "off"
+            # this provides a soft memory limit for the Go runtime It's a new, smarter way to manage memory compared to GOGC.
+            # The Go runtime's GC will then work more aggressively to keep the total memory footprint below this limit.
+            # It aims to find a smooth balance between memory usage and GC frequency.
+            - name: GOMEMLIMIT
+              valueFrom:
+                resourceFieldRef:
+                  resource: limits.memory
+            - name: GOMAXPROCS
+              valueFrom:
+                resourceFieldRef:
+                  resource: limits.cpu
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jumble-service
+  namespace: jumble-system
+
+spec:
+  type: ClusterIP
+
+  selector:
+    app: jumble
+
+  ports:
+    - name: jumble
+      port: 8000
+      targetPort: jumble

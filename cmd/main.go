@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 
 	"github.com/hamidoujand/jumble/pkg/logger"
@@ -35,7 +36,7 @@ func main() {
 }
 
 func run(ctx context.Context, log logger.Logger) error {
-	log.Info(ctx, "run", "build", build)
+	log.Info(ctx, "run", "build", build, "GOMAXPROCS", runtime.GOMAXPROCS(0))
 
 	shutdown := make(chan os.Signal, 1)
 
