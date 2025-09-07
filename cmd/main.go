@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ardanlabs/conf/v3"
+	"github.com/hamidoujand/jumble/internal/debug"
 	"github.com/hamidoujand/jumble/pkg/logger"
 )
 
@@ -49,6 +51,7 @@ func run(ctx context.Context, log logger.Logger) error {
 			ReadHeaderTimeout time.Duration `conf:"default:5s"`
 			WriteTimeout      time.Duration `conf:"default:30s"`
 			IdleTimeout       time.Duration `conf:"default:120s"`
+			DebugHost         string        `conf:"default:0.0.0.0:3000"`
 		}
 	}{}
 
@@ -69,6 +72,16 @@ func run(ctx context.Context, log logger.Logger) error {
 	}
 
 	log.Info(ctx, "app configuration", "cfg", out)
+
+	//==========================================================================
+	//Debug Server
+	go func() {
+		log.Info(ctx, "debug server starting", "host", cfg.Web.DebugHost)
+		if err := http.ListenAndServe(cfg.Web.DebugHost, debug.Register()); err != nil {
+			log.Error(ctx, "failed to start debug server", "host", cfg.Web.DebugHost, "err", err.Error())
+			return
+		}
+	}()
 
 	shutdown := make(chan os.Signal, 1)
 
