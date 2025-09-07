@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"log/slog"
 	"path/filepath"
 	"runtime"
@@ -131,6 +132,11 @@ func (l Logger) Errorc(ctx context.Context, caller int, msg string, args ...any)
 	}
 
 	l.write(ctx, LevelError, caller, msg, args...)
+}
+
+// NewStdLogger takes a Logger and returns a standard logger can be used in http.server to log error messages.
+func NewStdLogger(log Logger, level Level) *log.Logger {
+	return slog.NewLogLogger(log.handler, slog.Level(level))
 }
 
 func (l Logger) write(ctx context.Context, level Level, skipStack int, msg string, args ...any) {
