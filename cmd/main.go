@@ -13,7 +13,9 @@ import (
 
 	"github.com/ardanlabs/conf/v3"
 	"github.com/hamidoujand/jumble/internal/debug"
+	userHandlers "github.com/hamidoujand/jumble/internal/users/handlers"
 	"github.com/hamidoujand/jumble/pkg/logger"
+	"github.com/hamidoujand/jumble/pkg/mux"
 )
 
 //TODOS: add TLS support.
@@ -87,10 +89,16 @@ func run(ctx context.Context, log logger.Logger) error {
 	}()
 
 	//==========================================================================
+	// Mux init
+	m := mux.New(log)
+
+	userHandlers.RegisterRoutes(m)
+
+	//==========================================================================
 	// API Server
 	server := http.Server{
 		Addr:         cfg.Web.APIHost,
-		Handler:      nil,
+		Handler:      m,
 		ReadTimeout:  cfg.Web.ReadTimeout,
 		WriteTimeout: cfg.Web.WriteTimeout,
 		IdleTimeout:  cfg.Web.IdleTimeout,
