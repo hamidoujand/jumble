@@ -48,6 +48,9 @@ spec:
           ports:
             - name: jumble
               containerPort: 8000
+            - name: debug
+              containerPort: 3000
+
           resources:
             # from 100ms time slice we want 250ms to this service, so single thread Go application.
             requests:
@@ -91,3 +94,6 @@ spec:
     - name: jumble
       port: 8000
       targetPort: jumble
+    - name: debug
+      port: 3000
+      targetPort: debug
