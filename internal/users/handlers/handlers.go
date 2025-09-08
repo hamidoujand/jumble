@@ -14,7 +14,8 @@ type handler struct {
 
 func (h *handler) CreateUser(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
 	msg := map[string]string{
-		"msg": "Hello World!",
+		"msg":     "Hello World!",
+		"traceID": mux.GetTraceID(ctx).String(),
 	}
 
 	if err := mux.Respond(ctx, w, http.StatusOK, msg); err != nil {

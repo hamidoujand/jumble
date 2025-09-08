@@ -5,7 +5,9 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/hamidoujand/jumble/pkg/logger"
 )
 
@@ -40,6 +42,13 @@ func (m *Mux) HandleFunc(method string, version string, path string, handlerFunc
 	h := func(w http.ResponseWriter, r *http.Request) {
 		//original context from req.
 		ctx := r.Context()
+
+		rm := requestMeta{
+			startedAt: time.Now(),
+			requestID: uuid.New(),
+		}
+
+		ctx = setReqMetadata(ctx, &rm)
 
 		if err := wrappedHandler(ctx, w, r); err != nil {
 			//if you have an err in here you only need to log it
