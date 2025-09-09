@@ -5,3 +5,4 @@ infra/k8s/*
 TaskFile.yml
 .dockerignore
 README.md
+request.http

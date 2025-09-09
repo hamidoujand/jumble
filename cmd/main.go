@@ -13,6 +13,7 @@ import (
 
 	"github.com/ardanlabs/conf/v3"
 	"github.com/hamidoujand/jumble/internal/debug"
+	"github.com/hamidoujand/jumble/internal/mid"
 	userHandlers "github.com/hamidoujand/jumble/internal/users/handlers"
 	"github.com/hamidoujand/jumble/pkg/logger"
 	"github.com/hamidoujand/jumble/pkg/mux"
@@ -24,7 +25,7 @@ var build = "development"
 
 func main() {
 	traceIDFn := func(ctx context.Context) string {
-		return "00000000-0000-0000-0000-000000000000"
+		return mux.GetTraceID(ctx).String()
 	}
 
 	ctx := context.Background()
@@ -90,7 +91,10 @@ func run(ctx context.Context, log logger.Logger) error {
 
 	//==========================================================================
 	// Mux init
-	m := mux.New(log)
+	m := mux.New(log,
+		//global middleware
+		mid.Logger(log),
+	)
 
 	userHandlers.RegisterRoutes(m)
 
