@@ -68,3 +68,9 @@ tasks:
   tunnel:
     silent: true
     cmd: minikube service jumble-service --namespace=jumble-system --url
+  load:
+    silent: true
+    cmd: hey -m GET -c 100 -n 10000 http://localhost:8000/v1/users
+  metrics:
+    silent: true
+    cmd: expvarmon -ports="localhost:3000" -endpoint="/debug/vars" -vars="build,requests,goroutines,errors,panics,mem:memstats.HeapAlloc,mem:memstats.HeapSys,mem:memstats.Sys"

@@ -6,6 +6,7 @@ import (
 	"runtime/debug"
 
 	"github.com/hamidoujand/jumble/internal/errs"
+	"github.com/hamidoujand/jumble/internal/metrics"
 	"github.com/hamidoujand/jumble/pkg/mux"
 )
 
@@ -16,6 +17,7 @@ func Panic() mux.Middleware {
 				if rec := recover(); rec != nil {
 					stack := debug.Stack()
 					err = errs.Newf(http.StatusInternalServerError, "PANIC[%v] TRACE[%s]", rec, string(stack))
+					metrics.AddPanic(ctx)
 				}
 			}()
 

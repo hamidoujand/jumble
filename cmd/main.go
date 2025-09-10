@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"expvar"
 	"fmt"
 	"net/http"
 	"os"
@@ -89,12 +90,15 @@ func run(ctx context.Context, log logger.Logger) error {
 		}
 	}()
 
+	expvar.NewString("build").Set(build)
+
 	//==========================================================================
 	// Mux init
 	m := mux.New(log,
 		//global middleware
 		mid.Logger(log),
 		mid.Errors(log),
+		mid.Metrics(),
 		mid.Panic(),
 	)
 
