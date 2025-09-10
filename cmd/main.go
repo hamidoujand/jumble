@@ -95,6 +95,7 @@ func run(ctx context.Context, log logger.Logger) error {
 		//global middleware
 		mid.Logger(log),
 		mid.Errors(log),
+		mid.Panic(),
 	)
 
 	userHandlers.RegisterRoutes(m)
