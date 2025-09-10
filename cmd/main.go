@@ -94,6 +94,7 @@ func run(ctx context.Context, log logger.Logger) error {
 	m := mux.New(log,
 		//global middleware
 		mid.Logger(log),
+		mid.Errors(log),
 	)
 
 	userHandlers.RegisterRoutes(m)
