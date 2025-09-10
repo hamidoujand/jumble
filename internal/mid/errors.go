@@ -31,6 +31,11 @@ func Errors(log logger.Logger) mux.Middleware {
 			//log the error
 			log.Error(ctx, "handled error during request", "err", err, "fileName", appErr.FileName, "funcName", appErr.FuncName)
 
+			//after loggin of InternalServerErrors, we need to change their message to not leak info to client
+			if appErr.Code == http.StatusInternalServerError {
+				appErr.Message = http.StatusText(http.StatusInternalServerError)
+			}
+
 			if err := mux.Respond(ctx, w, appErr.Code, appErr); err != nil {
 				return fmt.Errorf("failed to send the error to client: %w", err)
 			}
