@@ -32,24 +32,40 @@ tasks:
         --build-arg CREATED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
         --load
         .
+
   apply:
     silent: true
     cmds:
+      - kubectl apply -f infra/k8s/base/namespace.yml
+      - kubectl apply -f infra/k8s/database/database.yml
+      - kubectl rollout status --namespace=jumble-system --watch --timeout=120s sts/database
       - kubectl apply -f infra/k8s/jumble/jumble-depl.yml
+
   delete:
     silent: true
     cmds:
       - kubectl delete -f infra/k8s/jumble/jumble-depl.yml
+      - kubectl delete -f infra/k8s/database/database.yml
+      - kubectl delete -f infra/k8s/base/namespace.yml
+
   logs:
     silent: true
     # if you have more than 1 pods, the "-l=app=jumble" matches all of them, and --max-log-requests=6 only fetches logs from 6 of
     # those replicas in one batch to not put a lot of pressure on system.
     cmd: kubectl logs --namespace=jumble-system -l=app=jumble --all-containers=true -f --tail=100 --max-log-requests=6
 
+  logs-db:
+    silent: true
+    cmd: kubectl logs --namespace=jumble-system -l app=database --all-containers=true -f --tail=100
+
   restart:
     silent: true
     cmds:
       - kubectl rollout restart deployment jumble --namespace=jumble-system
+
+  restart-db:
+    silent: true
+    cmd: kubectl rollout restart statefulset database --namespace=jumble-system
 
   status:
     silent: true
@@ -65,12 +81,18 @@ tasks:
     silent: true
     cmd: kubectl describe pod --namespace=jumble-system -l app=jumble
 
+  describe-database:
+    silent: true
+    cmd: kubectl describe pod --namespace=jumble-system -l app=database
+
   tunnel:
     silent: true
     cmd: minikube service jumble-service --namespace=jumble-system --url
+
   load:
     silent: true
     cmd: hey -m GET -c 100 -n 10000 http://localhost:8000/v1/users
+
   metrics:
     silent: true
     cmd: expvarmon -ports="localhost:3000" -endpoint="/debug/vars" -vars="build,requests,goroutines,errors,panics,mem:memstats.HeapAlloc,mem:memstats.HeapSys,mem:memstats.Sys"
