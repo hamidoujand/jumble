@@ -40,6 +40,7 @@ tasks:
       - kubectl apply -f infra/k8s/database/database.yml
       - kubectl rollout status --namespace=jumble-system --watch --timeout=120s sts/database
       - kubectl apply -f infra/k8s/jumble/jumble-depl.yml
+      - kubectl rollout status --namespace=jumble-system --watch --timeout=120s deployment/jumble
 
   delete:
     silent: true

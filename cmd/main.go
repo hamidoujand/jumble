@@ -15,6 +15,7 @@ import (
 	"github.com/ardanlabs/conf/v3"
 	"github.com/hamidoujand/jumble/internal/debug"
 	"github.com/hamidoujand/jumble/internal/mid"
+	"github.com/hamidoujand/jumble/internal/sqldb"
 	userHandlers "github.com/hamidoujand/jumble/internal/users/handlers"
 	"github.com/hamidoujand/jumble/pkg/logger"
 	"github.com/hamidoujand/jumble/pkg/mux"
@@ -60,6 +61,17 @@ func run(ctx context.Context, log logger.Logger) error {
 			DebugHost      string        `conf:"default:0.0.0.0:3000"`
 			APIHost        string        `conf:"default:0.0.0.0:8000"`
 		}
+
+		DB struct {
+			User     string `conf:"default:postgres"`
+			Password string `conf:"default:postgres,mask"`
+			//the app and db running in the same namespace, no need for cross namespace service discovery.
+			Host        string `conf:"default:database-service"`
+			Name        string `conf:"default:postgres"`
+			MaxIdleConn int    `conf:"default:0"` //needs load testing
+			MaxOpenConn int    `conf:"default:0"`
+			DisableTLS  bool   `conf:"default:true"`
+		}
 	}{}
 
 	const prefix = "JUMBLE"
@@ -91,6 +103,26 @@ func run(ctx context.Context, log logger.Logger) error {
 	}()
 
 	expvar.NewString("build").Set(build)
+
+	//==========================================================================
+	// Database init
+	db, err := sqldb.Open(sqldb.Config{
+		User:         cfg.DB.User,
+		Password:     cfg.DB.Password,
+		Host:         cfg.DB.Host,
+		Name:         cfg.DB.Name,
+		MaxIdleConns: cfg.DB.MaxIdleConn,
+		MaxOpenConns: cfg.DB.MaxOpenConn,
+		DisableTLS:   cfg.DB.DisableTLS,
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to open connection to database: %w", err)
+	}
+
+	defer db.Close()
+
+	log.Info(ctx, "database initialized", "host", cfg.DB.Host)
 
 	//==========================================================================
 	// Mux init
