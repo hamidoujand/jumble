@@ -65,3 +65,33 @@ func (m *Mux) HandleFunc(method string, version string, path string, handlerFunc
 
 	m.ServeMux.HandleFunc(pattern, h)
 }
+
+// HandlerFuncNoMid is for routes that you do not want to go through middleware chain.
+// such rounts are like: readiness and liveness probes.
+func (m *Mux) HandleFuncNoMid(method string, version string, path string, handlerFunc HandlerFunc) {
+	h := func(w http.ResponseWriter, r *http.Request) {
+		//original context from req.
+		ctx := r.Context()
+
+		rm := requestMeta{
+			startedAt: time.Now(),
+			requestID: uuid.New(),
+		}
+
+		ctx = setReqMetadata(ctx, &rm)
+
+		if err := handlerFunc(ctx, w, r); err != nil {
+			//if you have an err in here you only need to log it
+			m.log.Error(ctx, "error while handling request", "err", err.Error())
+			return
+		}
+	}
+
+	if version != "" {
+		path = "/" + version + path
+	}
+
+	pattern := fmt.Sprintf("%s %s", method, path)
+
+	m.ServeMux.HandleFunc(pattern, h)
+}

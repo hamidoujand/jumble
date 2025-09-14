@@ -1,4 +1,4 @@
-FROM golang:1.25.0 AS build_jumble
+FROM golang:1.25 AS build_jumble
 
 ENV CGO_ENABLED=0
 ARG BUILD
@@ -23,7 +23,7 @@ RUN go build -ldflags="-X main.build=${BUILD}" -o=jumble main.go
 
 
 # run binary inside an Alpine container
-FROM alpine:3.20
+FROM alpine:3.22
 
 ARG BUILD
 ARG CREATED_AT

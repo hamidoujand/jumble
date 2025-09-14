@@ -14,9 +14,10 @@ import (
 
 	"github.com/ardanlabs/conf/v3"
 	"github.com/hamidoujand/jumble/internal/debug"
+	healthHandlers "github.com/hamidoujand/jumble/internal/domains/health/handler"
+	userHandlers "github.com/hamidoujand/jumble/internal/domains/users/handler"
 	"github.com/hamidoujand/jumble/internal/mid"
 	"github.com/hamidoujand/jumble/internal/sqldb"
-	userHandlers "github.com/hamidoujand/jumble/internal/users/handlers"
 	"github.com/hamidoujand/jumble/pkg/logger"
 	"github.com/hamidoujand/jumble/pkg/mux"
 )
@@ -135,6 +136,12 @@ func run(ctx context.Context, log logger.Logger) error {
 	)
 
 	userHandlers.RegisterRoutes(m)
+	healthHandlers.RegisterRoutes(healthHandlers.Conf{
+		Mux:   m,
+		DB:    db,
+		Log:   log,
+		Build: build,
+	})
 
 	//==========================================================================
 	// API Server

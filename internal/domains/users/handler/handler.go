@@ -1,5 +1,5 @@
 // Package handlers provides endpoints to intract with users domain.
-package handlers
+package handler
 
 import (
 	"context"

@@ -55,7 +55,25 @@ spec:
             limits:
               cpu: "250m"
               memory: "200Mi"
+          readinessProbe: # readiness probes mark the service available to accept traffic.
+            httpGet:
+              path: /v1/readiness
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: 2
 
+          livenessProbe: # liveness probes mark the service alive or dead (to be restarted).
+            httpGet:
+              path: /v1/liveness
+              port: 8000
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: 2
           env:
             # turn off the automatic GC.
             - name: GOGC
@@ -71,6 +89,53 @@ spec:
               valueFrom:
                 resourceFieldRef:
                   resource: limits.cpu
+            - name: JUMBE_DB_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: jumble-config
+                  key: db_user
+                  optional: true
+
+            - name: JUMBE_DB_PASSWORD
+              valueFrom:
+                configMapKeyRef:
+                  name: jumble-config
+                  key: db_password
+                  optional: true
+
+            - name: JUMBE_DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: jumble-config
+                  key: db_host
+                  optional: true
+
+            - name: JUMBE_DB_DISABLE_TLS
+              valueFrom:
+                configMapKeyRef:
+                  name: jumble-config
+                  key: db_disable_tls
+                  optional: true
+
+            - name: KUBERNETES_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+
+            - name: KUBERNETES_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+
+            - name: KUBERNETES_POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+
+            - name: KUBERNETES_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
 
 ---
 apiVersion: v1
