@@ -16,11 +16,14 @@ ARG BUILD
 COPY . /jumble
 
 # cd into cmd of your project
-WORKDIR /jumble/cmd
+WORKDIR /jumble/cmd/services
 
 # build the bin and pass a value to a variable inside main package at build time.
 RUN go build -ldflags="-X main.build=${BUILD}" -o=jumble main.go
 
+# build admin cli.
+WORKDIR /jumble/cmd/admin 
+RUN go build -o=admin main.go 
 
 # run binary inside an Alpine container
 FROM alpine:3.22
@@ -33,7 +36,9 @@ ARG CREATED_AT
 RUN addgroup -g 1000 -S jumble
 RUN adduser -u 1000 -h /jumble -G jumble -S jumble
 
-COPY --from=build_jumble --chown=jumble:jumble /jumble/cmd/jumble /services/jumble
+COPY --from=build_jumble --chown=jumble:jumble /jumble/cmd/services/jumble /services/jumble
+COPY --from=build_jumble --chown=jumble:jumble /jumble/cmd/admin/admin /services/admin 
+
 WORKDIR /services
 
 #change user to jumble to run the service with it
