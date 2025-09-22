@@ -15,7 +15,7 @@ import (
 	"github.com/ardanlabs/conf/v3"
 	"github.com/hamidoujand/jumble/internal/debug"
 	healthHandlers "github.com/hamidoujand/jumble/internal/domains/health/handler"
-	userHandlers "github.com/hamidoujand/jumble/internal/domains/users/handler"
+	userHandlers "github.com/hamidoujand/jumble/internal/domains/user/handler"
 	"github.com/hamidoujand/jumble/internal/mid"
 	"github.com/hamidoujand/jumble/internal/sqldb"
 	"github.com/hamidoujand/jumble/pkg/logger"
