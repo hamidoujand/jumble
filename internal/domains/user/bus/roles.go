@@ -35,17 +35,20 @@ func (r Role) MarshalText() ([]byte, error) {
 
 //==============================================================================
 
-// RoleSlice - custom type for PostgreSQL TEXT[] handling
+// RoleSlice is a custom type that implements sql.Scanner and driver.Valuer
+// to handle PostgreSQL TEXT[] arrays for our Role type
 type RoleSlice []Role
 
-// Scan implements sql.Scanner - reads from database into []Role
+// Scan implements sql.Scanner - converts database TEXT[] to Go []Role
 func (rs *RoleSlice) Scan(val any) error {
+	// Handle NULL values from database
 	if val == nil {
-		//return an empty slice
+		//return an empty Role slice instead of nil.
 		*rs = RoleSlice{}
 		return nil
 	}
 
+	// Handle different types the database might return
 	switch v := val.(type) {
 	case []byte:
 		return rs.parsePostgresArray(string(v))
@@ -57,24 +60,26 @@ func (rs *RoleSlice) Scan(val any) error {
 
 }
 
-// Value implements driver.Valuer - writes []Role to database
+// Value implements driver.Valuer - converts Go []Role to PostgreSQL TEXT[]
 func (rs RoleSlice) Value() (driver.Value, error) {
+	// Handle empty slice
 	if len(rs) == 0 {
-		return "{}", nil
+		return "{}", nil //PostgreSQL empty array literal
 	}
 
-	// Format: {"admin","user"}
+	// Format each role with proper quoting for PostgreSQL array
+	//since Roles are defined by App not user input then it is a list of comma-separated values
 	qouted := make([]string, len(rs))
 
 	for i, role := range rs {
-		escaped := strings.ReplaceAll(role.String(), `"`, `""`)
-		qouted[i] = `"` + escaped + `"`
+		qouted[i] = role.String()
 	}
 	return "{" + strings.Join(qouted, ",") + "}", nil
 }
 
+// Example input from database: "{admin,user}" or "{\"admin\",\"user\"}"
 func (rs *RoleSlice) parsePostgresArray(arr string) error {
-	// remove the outer braces {}
+	// Remove outer braces: "{admin,user}" -> "admin,user"
 	s := strings.Trim(arr, "{}")
 
 	//if the arr is empty
@@ -83,46 +88,19 @@ func (rs *RoleSlice) parsePostgresArray(arr string) error {
 		return nil
 	}
 
-	//parser for comma-separated values within braces
-	var elements []string
-	var current strings.Builder
-	inQoutes := false
-	escapeNext := false
-
-	for _, ch := range s {
-		switch {
-		case escapeNext:
-			current.WriteRune(ch)
-			escapeNext = false
-		case ch == '\\':
-			escapeNext = true
-		case ch == '"':
-			inQoutes = !inQoutes
-		case ch == ',' && !inQoutes:
-			elements = append(elements, current.String())
-			current.Reset()
-		default:
-			current.WriteRune(ch)
-		}
-	}
-
-	//do not forget about last element
-	if current.Len() > 0 {
-		elements = append(elements, current.String())
-	}
-
-	//parse string elements to Role
+	// Simple split on comma - no need for complex parsing since the Roles are defined by the App not user input.
+	elements := strings.Split(s, ",")
 	roles := make([]Role, len(elements))
 	for i, elem := range elements {
-		//remove any qoutes around them
+		// Remove any quotes (in case PostgreSQL added them)
 		elem = strings.Trim(elem, `"`)
 
-		r, err := parseRole(elem)
+		// Validate the role
+		role, err := parseRole(elem)
 		if err != nil {
-			return fmt.Errorf("parseRole from DB: %w", err)
+			return fmt.Errorf("invalid role in array: %w", err)
 		}
-
-		roles[i] = r
+		roles[i] = role
 	}
 
 	*rs = roles
