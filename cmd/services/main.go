@@ -13,11 +13,15 @@ import (
 	"time"
 
 	"github.com/ardanlabs/conf/v3"
+	"github.com/hamidoujand/jumble/internal/auth"
 	"github.com/hamidoujand/jumble/internal/debug"
 	healthHandlers "github.com/hamidoujand/jumble/internal/domains/health/handler"
+	"github.com/hamidoujand/jumble/internal/domains/user/bus"
 	userHandlers "github.com/hamidoujand/jumble/internal/domains/user/handler"
+	"github.com/hamidoujand/jumble/internal/domains/user/store/userdb"
 	"github.com/hamidoujand/jumble/internal/mid"
 	"github.com/hamidoujand/jumble/internal/sqldb"
+	"github.com/hamidoujand/jumble/pkg/keystore"
 	"github.com/hamidoujand/jumble/pkg/logger"
 	"github.com/hamidoujand/jumble/pkg/mux"
 )
@@ -73,6 +77,12 @@ func run(ctx context.Context, log logger.Logger) error {
 			MaxOpenConn int    `conf:"default:0"`
 			DisableTLS  bool   `conf:"default:true"`
 		}
+
+		Auth struct {
+			Keys      string `conf:"default:/etc/rsa-keys"`
+			ActiveKey string `conf:"default:f7b7936a-1ca3-4015-811b-ec31b61e3071"`
+			Issuer    string `conf:"default:jumple project"`
+		}
 	}{}
 
 	const prefix = "JUMBLE"
@@ -124,6 +134,31 @@ func run(ctx context.Context, log logger.Logger) error {
 	defer db.Close()
 
 	log.Info(ctx, "database initialized", "host", cfg.DB.Host)
+
+	//==========================================================================
+	// Auth init
+
+	ks := keystore.New()
+
+	count, err := ks.LoadFromFileSystem(os.DirFS(cfg.Auth.Keys))
+	if err != nil {
+		return fmt.Errorf("loadFromFileSystem: %w", err)
+	}
+
+	//set the active kid
+	if err := ks.SetActiveKey(cfg.Auth.ActiveKey); err != nil {
+		return fmt.Errorf("setActiveKey: %w", err)
+	}
+
+	validActiveKid := ks.GetActiveKid()
+	log.Info(ctx, "setting active KID was successfull", "activeKID", validActiveKid)
+
+	store := userdb.NewStore(db)
+	usrBus := bus.New(store)
+
+	_ = auth.New(ks, usrBus, cfg.Auth.Issuer)
+
+	log.Info(ctx, "auth initialized", "key-count", count)
 
 	//==========================================================================
 	// Mux init

@@ -71,16 +71,24 @@ spec:
       # The ClusterFirstWithHostNet policy explicitly tells Kubernetes: "Even though I'm using the host's network,
       # please still use the cluster's internal DNS server (kube-dns/CoreDNS) for name resolution first."
       dnsPolicy: ClusterFirstWithHostNet
+      volumes:
+        - name: rsa-keys-volume
+          secret:
+            secretName: rsa-keys
       containers:
         - name: jumble
           image: localhost/hamidoujand/jumble:0.0.1
           imagePullPolicy: IfNotPresent
+          volumeMounts:
+            - name: rsa-keys-volume
+              mountPath: /etc/rsa-keys
+              readOnly: true
+
           ports:
             - name: jumble
               containerPort: 8000
             - name: debug
               containerPort: 3000
-
           resources:
             # from 100ms time slice we want 250ms to this service, so single thread Go application.
             requests:
@@ -178,6 +186,10 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
+            - name: JUMBLE_AUTH_KEYS
+              value: /etc/rsa-keys
+            - name: JUMBLE_AUTH_ACTIVE_KEY
+              value: f7b7936a-1ca3-4015-811b-ec31b61e3071
 
 ---
 apiVersion: v1

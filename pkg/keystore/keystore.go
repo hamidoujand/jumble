@@ -10,9 +10,8 @@ import (
 	"io"
 	"io/fs"
 	"path/filepath"
+	"strings"
 	"sync"
-
-	"github.com/google/uuid"
 )
 
 var ErrKeyNotFound = errors.New("key not found")
@@ -22,12 +21,12 @@ const maxPEMSize = 1024 * 1024 //1MB
 type Key struct {
 	private *rsa.PrivateKey
 	public  *rsa.PublicKey
-	kid     string
 }
 
 type KeyStore struct {
-	store map[string]Key
-	mu    sync.RWMutex
+	store     map[string]Key
+	mu        sync.RWMutex
+	activeKey string
 }
 
 func New() *KeyStore {
@@ -37,9 +36,6 @@ func New() *KeyStore {
 }
 
 func (ks *KeyStore) LoadFromFileSystem(fsys fs.FS) (int, error) {
-	// Example: ks.LoadRSAKeys(os.DirFS("/infra/keys/"))
-	// Example: /infra/keys/54bb2165-71e1-41a6-af3e-7da4a0e1e2c1.pem
-
 	walker := func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return fmt.Errorf("opening %s: %w", path, err)
@@ -47,7 +43,21 @@ func (ks *KeyStore) LoadFromFileSystem(fsys fs.FS) (int, error) {
 
 		//skip dirs
 		if d.IsDir() {
-			return nil
+			// Kubernetes secrets are mounted using a symlink structure which is
+			// causing the walker function to see the same file twice.
+
+			// /etc/rsa-keys/
+			// ├── ..data -> ..2025_09_25_12_36_31.3055298050/
+			// ├── ..2025_09_25_12_36_31.3055298050/
+			// │   └── private.pem
+			// └── private.pem -> ..data/private.pem   ACTUAL FILE we want
+
+			// Skip Kubernetes internal directories
+			if strings.HasPrefix(d.Name(), "..") {
+				return fs.SkipDir // use when you want to skip the entire directory and not process its content as well.
+			}
+			return nil //use when you want to skip current file/dir but want to process files inside of that dir
+			//just skipping the dir itself.
 		}
 
 		//skip files without .pem ext
@@ -89,18 +99,18 @@ func (ks *KeyStore) LoadFromFileSystem(fsys fs.FS) (int, error) {
 			return errors.New("key is not a valid rsa private key")
 		}
 
-		//key id
-		kid := uuid.NewString()
+		//filename will be uuid.pem and will be used as the ID of that key.
+
+		id := strings.TrimSuffix(filepath.Base(path), ".pem")
 
 		key := Key{
 			private: privateKey,
 			public:  &privateKey.PublicKey,
-			kid:     kid,
 		}
 
 		ks.mu.Lock()
-		ks.store[kid] = key
-		ks.mu.Unlock()
+		defer ks.mu.Unlock()
+		ks.store[id] = key
 		return nil
 	}
 
@@ -135,4 +145,30 @@ func (ks *KeyStore) PublicKey(kid string) (*rsa.PublicKey, error) {
 	}
 
 	return k.public, nil
+}
+
+func (ks *KeyStore) SetActiveKey(key string) error {
+	//check to see if the key is a valid key
+	found := func() bool {
+		ks.mu.RLock()
+		defer ks.mu.RUnlock()
+		_, ok := ks.store[key]
+		return ok
+	}()
+
+	if !found {
+		return fmt.Errorf("key[%s] not found in keystore", key)
+	}
+
+	//set it as the active key
+	ks.mu.Lock()
+	defer ks.mu.Unlock()
+	ks.activeKey = key
+	return nil
+}
+
+func (ks *KeyStore) GetActiveKid() string {
+	ks.mu.RLock()
+	defer ks.mu.RUnlock()
+	return ks.activeKey
 }

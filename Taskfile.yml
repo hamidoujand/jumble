@@ -38,6 +38,7 @@ tasks:
     cmds:
       - kubectl apply -f infra/k8s/base/namespace.yml
       - kubectl apply -f infra/k8s/jumble/jumble-conf.yml
+      - kubectl apply -f infra/k8s/jumble/jumble-secret.yml
       - kubectl apply -f infra/k8s/database/database.yml
       - kubectl rollout status --namespace=jumble-system --watch --timeout=120s sts/database
       - kubectl apply -f infra/k8s/jumble/jumble-depl.yml
@@ -49,6 +50,7 @@ tasks:
       - kubectl delete -f infra/k8s/jumble/jumble-depl.yml
       - kubectl delete -f infra/k8s/database/database.yml
       - kubectl delete -f infra/k8s/jumble/jumble-conf.yml
+      - kubectl delete -f infra/k8s/jumble/jumble-secret.yml
       - kubectl delete -f infra/k8s/base/namespace.yml
 
   logs:
@@ -99,3 +101,11 @@ tasks:
   metrics:
     silent: true
     cmd: expvarmon -ports="localhost:3000" -endpoint="/debug/vars" -vars="build,requests,goroutines,errors,panics,mem:memstats.HeapAlloc,mem:memstats.HeapSys,mem:memstats.Sys"
+
+  genkey:
+    silent: true
+    cmds:
+      # generate private key
+      - openssl genrsa -out infra/keys/private.pem 2048
+      # extract public key from private key
+      - openssl rsa -in infra/keys/private.pem -pubout -out infra/keys/public.pem
