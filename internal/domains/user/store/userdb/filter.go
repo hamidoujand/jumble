@@ -23,8 +23,8 @@ func applyFilters(filters usrbus.QueryFilter, data map[string]any, buf *bytes.Bu
 		whereClause = append(whereClause, "department = :department")
 	}
 
-	if filters.Role != nil {
-		data["roles"] = filters.Role
+	if filters.Roles != nil {
+		data["roles"] = filters.Roles
 		whereClause = append(whereClause, "roles && :roles")
 	}
 

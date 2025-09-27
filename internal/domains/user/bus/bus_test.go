@@ -296,7 +296,7 @@ func Test_Query(t *testing.T) {
 	role := []bus.Role{bus.RoleAdmin}
 
 	f = bus.QueryFilter{
-		Role: role,
+		Roles: role,
 	}
 
 	o, err = bus.ParseOrderBy("name,desc")

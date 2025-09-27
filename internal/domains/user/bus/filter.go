@@ -7,7 +7,7 @@ import (
 type QueryFilter struct {
 	Name           *string
 	Department     *string
-	Role           []Role
+	Roles          []Role
 	StartCreatedAt *time.Time
 	EndCreatedAt   *time.Time
 }
