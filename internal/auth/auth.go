@@ -35,7 +35,6 @@ type userBus interface {
 }
 
 type Auth struct {
-	userbus      userBus
 	keyLoader    keyLoader
 	signinMethod jwt.SigningMethod
 	parser       *jwt.Parser
@@ -43,7 +42,6 @@ type Auth struct {
 
 func New(loader keyLoader, usrBus userBus, issuer string) *Auth {
 	return &Auth{
-		userbus:      usrBus,
 		keyLoader:    loader,
 		signinMethod: jwt.GetSigningMethod(jwt.SigningMethodRS256.Name),
 		parser:       jwt.NewParser(jwt.WithValidMethods([]string{jwt.SigningMethodRS256.Name})),
@@ -105,24 +103,6 @@ func (a *Auth) VerifyToken(ctx context.Context, bearer string) (Claims, error) {
 	//validate token
 	if !verfiedToken.Valid {
 		return Claims{}, ErrInvalidToken
-	}
-
-	// is user enabled? only do it if the user bus is passed to this fn otherwise we are in tests
-	if a.userbus != nil {
-
-		userId, err := uuid.Parse(claims.Subject)
-		if err != nil {
-			return Claims{}, fmt.Errorf("parse userID: %w", err)
-		}
-
-		usr, err := a.userbus.QueryByID(ctx, userId)
-		if err != nil {
-			return Claims{}, fmt.Errorf("queryByID: %w", err)
-		}
-
-		if !usr.Enabled {
-			return Claims{}, ErrUserDisabled
-		}
 	}
 
 	return claims, nil
