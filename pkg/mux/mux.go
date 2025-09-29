@@ -43,12 +43,12 @@ func (m *Mux) HandleFunc(method string, version string, path string, handlerFunc
 		//original context from req.
 		ctx := r.Context()
 
-		rm := requestMeta{
+		rm := RequestMeta{
 			startedAt: time.Now(),
 			requestID: uuid.New(),
 		}
 
-		ctx = setReqMetadata(ctx, &rm)
+		ctx = SetReqMetadata(ctx, &rm)
 
 		if err := wrappedHandler(ctx, w, r); err != nil {
 			//if you have an err in here you only need to log it
@@ -73,12 +73,12 @@ func (m *Mux) HandleFuncNoMid(method string, version string, path string, handle
 		//original context from req.
 		ctx := r.Context()
 
-		rm := requestMeta{
+		rm := RequestMeta{
 			startedAt: time.Now(),
 			requestID: uuid.New(),
 		}
 
-		ctx = setReqMetadata(ctx, &rm)
+		ctx = SetReqMetadata(ctx, &rm)
 
 		if err := handlerFunc(ctx, w, r); err != nil {
 			//if you have an err in here you only need to log it

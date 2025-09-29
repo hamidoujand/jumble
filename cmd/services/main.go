@@ -79,9 +79,10 @@ func run(ctx context.Context, log logger.Logger) error {
 		}
 
 		Auth struct {
-			Keys      string `conf:"default:/etc/rsa-keys"`
-			ActiveKey string `conf:"default:f7b7936a-1ca3-4015-811b-ec31b61e3071"`
-			Issuer    string `conf:"default:jumple project"`
+			Keys        string        `conf:"default:/etc/rsa-keys"`
+			ActiveKey   string        `conf:"default:f7b7936a-1ca3-4015-811b-ec31b61e3071"`
+			Issuer      string        `conf:"default:jumple project"`
+			TokenMaxAge time.Duration `conf:"default:1h"`
 		}
 	}{}
 
@@ -156,7 +157,7 @@ func run(ctx context.Context, log logger.Logger) error {
 	store := userdb.NewStore(db)
 	usrBus := bus.New(store)
 
-	_ = auth.New(ks, usrBus, cfg.Auth.Issuer)
+	a := auth.New(ks, usrBus, cfg.Auth.Issuer)
 
 	log.Info(ctx, "auth initialized", "key-count", count)
 
@@ -170,7 +171,15 @@ func run(ctx context.Context, log logger.Logger) error {
 		mid.Panic(),
 	)
 
-	userHandlers.RegisterRoutes(m)
+	userHandlers.RegisterRoutes(userHandlers.Conf{
+		Mux:         m,
+		UserBus:     usrBus,
+		Auth:        a,
+		Kid:         validActiveKid,
+		Issuer:      cfg.Auth.Issuer,
+		TokenMaxAge: cfg.Auth.TokenMaxAge,
+	})
+
 	healthHandlers.RegisterRoutes(healthHandlers.Conf{
 		Mux:   m,
 		DB:    db,
