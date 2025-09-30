@@ -24,6 +24,7 @@ import (
 	"github.com/hamidoujand/jumble/pkg/keystore"
 	"github.com/hamidoujand/jumble/pkg/logger"
 	"github.com/hamidoujand/jumble/pkg/mux"
+	"github.com/hamidoujand/jumble/pkg/otel"
 )
 
 //TODOS: add TLS support.
@@ -84,6 +85,12 @@ func run(ctx context.Context, log logger.Logger) error {
 			Issuer      string        `conf:"default:jumple project"`
 			TokenMaxAge time.Duration `conf:"default:1h"`
 		}
+
+		Tempo struct {
+			Host        string  `conf:"default:tempo:4317"`
+			ServiceName string  `conf:"default:jumble"`
+			Probability float64 `conf:"default:0.05"`
+		}
 	}{}
 
 	const prefix = "JUMBLE"
@@ -137,6 +144,30 @@ func run(ctx context.Context, log logger.Logger) error {
 	log.Info(ctx, "database initialized", "host", cfg.DB.Host)
 
 	//==========================================================================
+	// Trace init
+	provider, teardown, err := otel.InitTracing(log, otel.Config{
+		ServiceName: cfg.Tempo.ServiceName,
+		ExcludedRoutes: map[string]struct{}{
+			"/v1/liveness":  {},
+			"/v1/readiness": {},
+		},
+		Host:        cfg.Tempo.Host,
+		Probability: cfg.Tempo.Probability,
+	})
+
+	if err != nil {
+		return fmt.Errorf("initTracing: %w", err)
+	}
+
+	defer func() {
+		teardown(ctx)
+	}()
+
+	tracer := provider.Tracer(cfg.Tempo.ServiceName)
+
+	log.Info(ctx, "tracer successfully initialized", "host", cfg.Tempo.Host, "probability", cfg.Tempo.Probability)
+
+	//==========================================================================
 	// Auth init
 
 	ks := keystore.New()
@@ -164,7 +195,9 @@ func run(ctx context.Context, log logger.Logger) error {
 	//==========================================================================
 	// Mux init
 	m := mux.New(log,
+		tracer,
 		//global middleware
+		mid.Otel(tracer),
 		mid.Logger(log),
 		mid.Errors(log),
 		mid.Metrics(),
