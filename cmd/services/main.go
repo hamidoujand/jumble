@@ -33,7 +33,7 @@ var build = "development"
 
 func main() {
 	traceIDFn := func(ctx context.Context) string {
-		return mux.GetTraceID(ctx).String()
+		return otel.GetTraceID(ctx)
 	}
 
 	ctx := context.Background()
@@ -66,6 +66,7 @@ func run(ctx context.Context, log logger.Logger) error {
 			ShutdownTimout time.Duration `conf:"default:120s"`
 			DebugHost      string        `conf:"default:0.0.0.0:3000"`
 			APIHost        string        `conf:"default:0.0.0.0:8000"`
+			HealthCheck    string        `conf:"default:0.0.0.0:9000"`
 		}
 
 		DB struct {
@@ -145,7 +146,7 @@ func run(ctx context.Context, log logger.Logger) error {
 
 	//==========================================================================
 	// Trace init
-	provider, teardown, err := otel.InitTracing(log, otel.Config{
+	provider, teardown, err := otel.NewTraceProvider(log, otel.Config{
 		ServiceName: cfg.Tempo.ServiceName,
 		ExcludedRoutes: map[string]struct{}{
 			"/v1/liveness":  {},
@@ -195,9 +196,9 @@ func run(ctx context.Context, log logger.Logger) error {
 	//==========================================================================
 	// Mux init
 	m := mux.New(log,
-		tracer,
 		//global middleware
-		mid.Otel(tracer),
+		mid.HTTPSpanMiddleware(tracer),
+		mid.AddTracer(tracer),
 		mid.Logger(log),
 		mid.Errors(log),
 		mid.Metrics(),
@@ -213,12 +214,21 @@ func run(ctx context.Context, log logger.Logger) error {
 		TokenMaxAge: cfg.Auth.TokenMaxAge,
 	})
 
-	healthHandlers.RegisterRoutes(healthHandlers.Conf{
+	healthCheckMux := healthHandlers.RegisterRoutes(healthHandlers.Conf{
 		Mux:   m,
 		DB:    db,
 		Log:   log,
 		Build: build,
 	})
+
+	//health check server
+	go func() {
+		log.Info(ctx, "health check server is running", "host", cfg.Web.HealthCheck)
+		if err := http.ListenAndServe(cfg.Web.HealthCheck, healthCheckMux); err != nil {
+			log.Error(ctx, "health check server failed", "err", err)
+			return
+		}
+	}()
 
 	//==========================================================================
 	// API Server

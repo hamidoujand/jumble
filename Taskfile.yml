@@ -37,6 +37,7 @@ tasks:
     silent: true
     cmds:
       - kubectl apply -f infra/k8s/base/namespace.yml
+      - kubectl apply -f infra/k8s/tempo/tempo.yml
       - kubectl apply -f infra/k8s/jumble/jumble-conf.yml
       - kubectl apply -f infra/k8s/jumble/jumble-secret.yml
       - kubectl apply -f infra/k8s/database/database.yml
@@ -48,6 +49,7 @@ tasks:
     silent: true
     cmds:
       - kubectl delete -f infra/k8s/jumble/jumble-depl.yml
+      - kubectl delete -f infra/k8s/tempo/tempo.yml
       - kubectl delete -f infra/k8s/database/database.yml
       - kubectl delete -f infra/k8s/jumble/jumble-conf.yml
       - kubectl delete -f infra/k8s/jumble/jumble-secret.yml
@@ -62,6 +64,10 @@ tasks:
   logs-db:
     silent: true
     cmd: kubectl logs --namespace=jumble-system -l app=database --all-containers=true -f --tail=100
+
+  logs-tempo:
+    silent: true
+    cmd: kubectl logs --namespace=jumble-system -l app=tempo --all-containers=true -f --tail=100
 
   restart:
     silent: true
@@ -90,9 +96,9 @@ tasks:
     silent: true
     cmd: kubectl describe pod --namespace=jumble-system -l app=database
 
-  tunnel:
+  service:
     silent: true
-    cmd: minikube service jumble-service --namespace=jumble-system --url
+    cmd: kubectl port-forward service/jumble-service 8000:8000 --namespace=jumble-system
 
   load:
     silent: true

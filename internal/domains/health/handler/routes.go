@@ -15,8 +15,8 @@ type Conf struct {
 	Build string
 }
 
-func RegisterRoutes(cfg Conf) {
-	const version = "v1"
+func RegisterRoutes(cfg Conf) *http.ServeMux {
+	mux := http.NewServeMux()
 
 	h := handler{
 		db:    cfg.DB,
@@ -24,6 +24,7 @@ func RegisterRoutes(cfg Conf) {
 		build: cfg.Build,
 	}
 
-	cfg.Mux.HandleFuncNoMid(http.MethodGet, version, "/readiness", h.readiness)
-	cfg.Mux.HandleFuncNoMid(http.MethodGet, version, "/liveness", h.liveness)
+	mux.HandleFunc("/v1/readiness", h.readiness)
+	mux.HandleFunc("/v1/liveness", h.liveness)
+	return mux
 }

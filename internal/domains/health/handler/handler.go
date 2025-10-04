@@ -2,15 +2,14 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"os"
 	"runtime"
 	"time"
 
-	"github.com/hamidoujand/jumble/internal/errs"
 	"github.com/hamidoujand/jumble/internal/sqldb"
 	"github.com/hamidoujand/jumble/pkg/logger"
-	"github.com/hamidoujand/jumble/pkg/mux"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -20,19 +19,22 @@ type handler struct {
 	build string
 }
 
-func (h *handler) readiness(ctx context.Context, w http.ResponseWriter, _ *http.Request) error {
-	ctx, cancel := context.WithTimeout(ctx, time.Second*10)
+func (h *handler) readiness(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), time.Second*10)
 	defer cancel()
 
 	if err := sqldb.ConnCheck(ctx, h.db); err != nil {
 		h.log.Error(ctx, "readiness failed", "err", err.Error())
-		return errs.Newf(http.StatusInternalServerError, "readiness failed")
+		w.WriteHeader(http.StatusInternalServerError)
+		return
 	}
 
-	return mux.Respond(ctx, w, http.StatusOK, nil)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]string{"msg": "ok"})
 }
 
-func (h *handler) liveness(ctx context.Context, w http.ResponseWriter, _ *http.Request) error {
+func (h *handler) liveness(w http.ResponseWriter, r *http.Request) {
 	//host name from kernel
 	host, err := os.Hostname()
 	if err != nil {
@@ -50,5 +52,6 @@ func (h *handler) liveness(ctx context.Context, w http.ResponseWriter, _ *http.R
 		GOMAXPROCS: runtime.GOMAXPROCS(0),
 	}
 
-	return mux.Respond(ctx, w, http.StatusOK, info)
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(info)
 }

@@ -101,7 +101,7 @@ spec:
           readinessProbe: # readiness probes mark the service available to accept traffic.
             httpGet:
               path: /v1/readiness
-              port: 8000
+              port: 9000
             initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 5
@@ -111,7 +111,7 @@ spec:
           livenessProbe: # liveness probes mark the service alive or dead (to be restarted).
             httpGet:
               path: /v1/liveness
-              port: 8000
+              port: 9000
             initialDelaySeconds: 2
             periodSeconds: 5
             timeoutSeconds: 5
