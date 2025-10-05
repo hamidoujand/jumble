@@ -6,8 +6,8 @@ import (
 	"net/http"
 
 	"github.com/hamidoujand/jumble/pkg/mux"
-	"github.com/hamidoujand/jumble/pkg/otel"
-	otl "go.opentelemetry.io/otel"
+	"github.com/hamidoujand/jumble/pkg/telemetry"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
@@ -17,16 +17,17 @@ import (
 func AddTracer(tracer trace.Tracer) mux.Middleware {
 	return func(next mux.HandlerFunc) mux.HandlerFunc {
 		return func(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
-			ctx = otel.SetTracer(ctx, tracer)
+			ctx = telemetry.SetTracer(ctx, tracer)
 			return next(ctx, w, r)
 		}
 	}
 }
+
 func HTTPSpanMiddleware(tracer trace.Tracer) mux.Middleware {
 	return func(next mux.HandlerFunc) mux.HandlerFunc {
 		return func(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
 			// Extract trace context from headers FIRST
-			ctx = otl.GetTextMapPropagator().Extract(ctx, propagation.HeaderCarrier(r.Header))
+			ctx = otel.GetTextMapPropagator().Extract(ctx, propagation.HeaderCarrier(r.Header))
 
 			// Start span for this HTTP request
 			ctx, span := tracer.Start(ctx, fmt.Sprintf("%s %s", r.Method, r.URL.Path))
@@ -41,7 +42,7 @@ func HTTPSpanMiddleware(tracer trace.Tracer) mux.Middleware {
 
 			//set the traceID into ctx
 			traceID := span.SpanContext().TraceID().String()
-			ctx = otel.SetTraceID(ctx, traceID)
+			ctx = telemetry.SetTraceID(ctx, traceID)
 
 			// Process the request
 			err := next(ctx, w, r)
@@ -55,7 +56,7 @@ func HTTPSpanMiddleware(tracer trace.Tracer) mux.Middleware {
 			}
 
 			// Inject trace context into response
-			otl.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(w.Header()))
+			otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(w.Header()))
 
 			return err
 		}

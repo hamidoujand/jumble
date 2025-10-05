@@ -10,8 +10,10 @@ import (
 	"github.com/google/uuid"
 	usrBus "github.com/hamidoujand/jumble/internal/domains/user/bus"
 	"github.com/hamidoujand/jumble/internal/page"
+	"github.com/hamidoujand/jumble/pkg/telemetry"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jmoiron/sqlx"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 const (
@@ -33,6 +35,9 @@ func (s *Store) Create(ctx context.Context, usr usrBus.User) error {
 	INSERT INTO users (id,name,email,password_hash,roles,enabled,department,created_at,updated_at) 
 	VALUES (:id,:name,:email,:password_hash,:roles,:enabled,:department,:created_at,:updated_at) 
 	`
+
+	ctx, span := telemetry.AddSpan(ctx, "user.store.create", attribute.String("query", q))
+	defer span.End()
 
 	if _, err := s.db.NamedExecContext(ctx, q, fromBusUser(usr)); err != nil {
 		var pgerror *pgconn.PgError
@@ -62,6 +67,8 @@ func (s *Store) Update(ctx context.Context, usr usrBus.User) error {
 	WHERE 
 		id = :id;
 	`
+	ctx, span := telemetry.AddSpan(ctx, "user.store.update", attribute.String("query", q))
+	defer span.End()
 
 	if _, err := s.db.NamedExecContext(ctx, q, fromBusUser(usr)); err != nil {
 		var pgerror *pgconn.PgError
@@ -81,6 +88,9 @@ func (s *Store) Delete(ctx context.Context, usr usrBus.User) error {
 	const q = `
 	DELETE FROM users WHERE id = :id;
 	`
+	ctx, span := telemetry.AddSpan(ctx, "user.store.delete", attribute.String("query", q))
+	defer span.End()
+
 	if _, err := s.db.NamedExecContext(ctx, q, fromBusUser(usr)); err != nil {
 		return fmt.Errorf("namedExecContext: %w", err)
 	}
@@ -94,6 +104,9 @@ func (s *Store) QueryByID(ctx context.Context, id uuid.UUID) (usrBus.User, error
 	}
 
 	const q = `SELECT * FROM users WHERE id = :id`
+
+	ctx, span := telemetry.AddSpan(ctx, "user.store.queryByID", attribute.String("query", q))
+	defer span.End()
 
 	var usr user
 
@@ -124,6 +137,10 @@ func (s *Store) QueryByEmail(ctx context.Context, email mail.Address) (usrBus.Us
 	}
 
 	const q = `SELECT * FROM users WHERE email = :email;`
+
+	ctx, span := telemetry.AddSpan(ctx, "user.store.queryByEmail", attribute.String("query", q))
+	defer span.End()
+
 	rows, err := s.db.NamedQueryContext(ctx, q, data)
 	if err != nil {
 		return usrBus.User{}, fmt.Errorf("namedQueryContext: %w", err)
@@ -167,6 +184,9 @@ func (s *Store) Query(ctx context.Context, filters usrBus.QueryFilter, orderBy u
 	//applying pagination
 	buf.WriteString(" OFFSET :offset ROWS FETCH NEXT :rows_per_page ROWS ONLY;")
 
+	ctx, span := telemetry.AddSpan(ctx, "user.store.query", attribute.String("query", buf.String()))
+	defer span.End()
+
 	var usrs []user
 	rows, err := s.db.NamedQueryContext(ctx, buf.String(), data)
 	if err != nil {
@@ -197,6 +217,9 @@ func (s *Store) Query(ctx context.Context, filters usrBus.QueryFilter, orderBy u
 
 func (s *Store) Count(ctx context.Context, filters usrBus.QueryFilter) (int, error) {
 	const q = `SELECT COUNT(1) FROM users`
+	ctx, span := telemetry.AddSpan(ctx, "user.store.count", attribute.String("query", q))
+	defer span.End()
+
 	buf := bytes.NewBufferString(q)
 
 	data := map[string]any{}

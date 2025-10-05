@@ -24,7 +24,7 @@ import (
 	"github.com/hamidoujand/jumble/pkg/keystore"
 	"github.com/hamidoujand/jumble/pkg/logger"
 	"github.com/hamidoujand/jumble/pkg/mux"
-	"github.com/hamidoujand/jumble/pkg/otel"
+	"github.com/hamidoujand/jumble/pkg/telemetry"
 )
 
 //TODOS: add TLS support.
@@ -33,7 +33,7 @@ var build = "development"
 
 func main() {
 	traceIDFn := func(ctx context.Context) string {
-		return otel.GetTraceID(ctx)
+		return telemetry.GetTraceID(ctx)
 	}
 
 	ctx := context.Background()
@@ -146,7 +146,7 @@ func run(ctx context.Context, log logger.Logger) error {
 
 	//==========================================================================
 	// Trace init
-	provider, teardown, err := otel.NewTraceProvider(log, otel.Config{
+	provider, teardown, err := telemetry.NewTraceProvider(log, telemetry.Config{
 		ServiceName: cfg.Tempo.ServiceName,
 		ExcludedRoutes: map[string]struct{}{
 			"/v1/liveness":  {},

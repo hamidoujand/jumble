@@ -17,6 +17,7 @@ import (
 	"github.com/hamidoujand/jumble/internal/errs"
 	"github.com/hamidoujand/jumble/internal/page"
 	"github.com/hamidoujand/jumble/pkg/mux"
+	"github.com/hamidoujand/jumble/pkg/telemetry"
 )
 
 type handler struct {
@@ -28,6 +29,10 @@ type handler struct {
 }
 
 func (h *handler) CreateUser(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
+
+	ctx, span := telemetry.AddSpan(ctx, "user.handler.createUser")
+	defer span.End()
+
 	var nu newUser
 	if err := json.NewDecoder(r.Body).Decode(&nu); err != nil {
 		return errs.Newf(http.StatusBadRequest, "invalid json: %s", err)
@@ -78,6 +83,9 @@ func (h *handler) CreateUser(ctx context.Context, w http.ResponseWriter, r *http
 }
 
 func (h *handler) QueryUserByID(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
+	ctx, span := telemetry.AddSpan(ctx, "user.handler.queryByID")
+	defer span.End()
+
 	p := r.PathValue("id")
 
 	userID, err := uuid.Parse(p)
@@ -102,6 +110,9 @@ func (h *handler) QueryUserByID(ctx context.Context, w http.ResponseWriter, r *h
 }
 
 func (h *handler) DeleteUser(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
+	ctx, span := telemetry.AddSpan(ctx, "user.handler.deleteUser")
+	defer span.End()
+
 	p := r.PathValue("id")
 
 	userId, err := uuid.Parse(p)
@@ -142,6 +153,9 @@ func (h *handler) DeleteUser(ctx context.Context, w http.ResponseWriter, r *http
 }
 
 func (h *handler) UpdateUser(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
+	ctx, span := telemetry.AddSpan(ctx, "user.handler.updateUser")
+	defer span.End()
+
 	usr, err := auth.GetUser(ctx)
 	if err != nil {
 		return errs.New(http.StatusUnauthorized, err)
@@ -178,6 +192,9 @@ func (h *handler) UpdateUser(ctx context.Context, w http.ResponseWriter, r *http
 }
 
 func (h *handler) UpdateRole(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
+	ctx, span := telemetry.AddSpan(ctx, "user.handler.updateRole")
+	defer span.End()
+
 	admin, err := auth.GetUser(ctx)
 	if err != nil {
 		return errs.New(http.StatusUnauthorized, err)
@@ -236,6 +253,9 @@ func (h *handler) UpdateRole(ctx context.Context, w http.ResponseWriter, r *http
 }
 
 func (h *handler) DisableUser(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
+	ctx, span := telemetry.AddSpan(ctx, "user.handler.disableUser")
+	defer span.End()
+
 	p := r.PathValue("id")
 
 	userId, err := uuid.Parse(p)
@@ -284,6 +304,9 @@ func (h *handler) DisableUser(ctx context.Context, w http.ResponseWriter, r *htt
 }
 
 func (h *handler) Query(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
+	ctx, span := telemetry.AddSpan(ctx, "user.handler.query")
+	defer span.End()
+
 	//pagination
 	p := r.URL.Query().Get("page")
 	rows := r.URL.Query().Get("rows")
@@ -330,6 +353,9 @@ func (h *handler) Query(ctx context.Context, w http.ResponseWriter, r *http.Requ
 }
 
 func (h *handler) Authenticate(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
+	ctx, span := telemetry.AddSpan(ctx, "user.handler.authenticate")
+	defer span.End()
+
 	var authData authenticate
 	if err := json.NewDecoder(r.Body).Decode(&authData); err != nil {
 		return errs.Newf(http.StatusBadRequest, "invalid json: %s", err)
