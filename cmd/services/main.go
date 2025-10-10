@@ -5,6 +5,7 @@ import (
 	"errors"
 	"expvar"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -25,6 +26,7 @@ import (
 	"github.com/hamidoujand/jumble/pkg/logger"
 	"github.com/hamidoujand/jumble/pkg/mux"
 	"github.com/hamidoujand/jumble/pkg/telemetry"
+	"go.opentelemetry.io/otel"
 )
 
 //TODOS: add TLS support.
@@ -33,10 +35,13 @@ var build = "development"
 
 func main() {
 	traceIDFn := func(ctx context.Context) string {
-		return telemetry.GetTraceID(ctx)
+		return mux.GetTraceID(ctx).String()
 	}
-
-	ctx := context.Background()
+	//os.Interrupt is going to be platform independent for example on UNIX it mapped to "syscall.SIGINT" on Windows to
+	//something else, so we need a flexibility in here so we use os.Interrupt as well.
+	//NOTE: you can skip "syscall.SIGINT" and only use os.Interrupt.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	var env logger.Environment
 
@@ -146,25 +151,25 @@ func run(ctx context.Context, log logger.Logger) error {
 
 	//==========================================================================
 	// Trace init
-	provider, teardown, err := telemetry.NewTraceProvider(log, telemetry.Config{
+	cleanup, err := telemetry.SetupOTelSDK(telemetry.Config{
 		ServiceName: cfg.Tempo.ServiceName,
-		ExcludedRoutes: map[string]struct{}{
-			"/v1/liveness":  {},
-			"/v1/readiness": {},
-		},
 		Host:        cfg.Tempo.Host,
 		Probability: cfg.Tempo.Probability,
+		Build:       build,
+		ExcludedRoutes: map[string]struct{}{
+			"/v1/readiness/": {},
+			"/v1/liveness/":  {},
+		},
 	})
-
 	if err != nil {
-		return fmt.Errorf("initTracing: %w", err)
+		return fmt.Errorf("setupOTelSDK: %w", err)
 	}
 
 	defer func() {
-		teardown(ctx)
+		cleanup(ctx)
 	}()
 
-	tracer := provider.Tracer(cfg.Tempo.ServiceName)
+	tracer := otel.Tracer(cfg.Tempo.ServiceName)
 
 	log.Info(ctx, "tracer successfully initialized", "host", cfg.Tempo.Host, "probability", cfg.Tempo.Probability)
 
@@ -186,7 +191,7 @@ func run(ctx context.Context, log logger.Logger) error {
 	validActiveKid := ks.GetActiveKid()
 	log.Info(ctx, "setting active KID was successfull", "activeKID", validActiveKid)
 
-	store := userdb.NewStore(db)
+	store := userdb.NewStore(db, tracer)
 	usrBus := bus.New(store)
 
 	a := auth.New(ks, usrBus, cfg.Auth.Issuer)
@@ -197,8 +202,6 @@ func run(ctx context.Context, log logger.Logger) error {
 	// Mux init
 	m := mux.New(log,
 		//global middleware
-		mid.HTTPSpanMiddleware(tracer),
-		mid.AddTracer(tracer),
 		mid.Logger(log),
 		mid.Errors(log),
 		mid.Metrics(),
@@ -212,6 +215,7 @@ func run(ctx context.Context, log logger.Logger) error {
 		Kid:         validActiveKid,
 		Issuer:      cfg.Auth.Issuer,
 		TokenMaxAge: cfg.Auth.TokenMaxAge,
+		Tracer:      tracer,
 	})
 
 	healthCheckMux := healthHandlers.RegisterRoutes(healthHandlers.Conf{
@@ -239,15 +243,10 @@ func run(ctx context.Context, log logger.Logger) error {
 		WriteTimeout: cfg.Web.WriteTimeout,
 		IdleTimeout:  cfg.Web.IdleTimeout,
 		ErrorLog:     logger.NewStdLogger(log, logger.LevelError),
+		BaseContext:  func(_ net.Listener) context.Context { return ctx },
 	}
 
 	serverErrs := make(chan error, 1)
-	shutdown := make(chan os.Signal, 1)
-
-	//os.Interrupt is going to be platform independent for example on UNIX it mapped to "syscall.SIGINT" on Windows to
-	//something else, so we need a flexibility in here so we use os.Interrupt as well.
-	//NOTE: you can skip "syscall.SIGINT" and only use os.Interrupt.
-	signal.Notify(shutdown, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
 		log.Info(ctx, "API server starting", "host", cfg.Web.APIHost)
@@ -260,14 +259,14 @@ func run(ctx context.Context, log logger.Logger) error {
 	case err := <-serverErrs:
 		//something went wrong when starting the server
 		return fmt.Errorf("server error: %w", err)
-	case sig := <-shutdown:
-		log.Info(ctx, "server received a shutdown signal", "signal", sig)
-		defer log.Info(ctx, "server completed the shutdown process", "signal", sig)
+	case <-ctx.Done():
+		log.Info(ctx, "server received a shutdown signal")
+		defer log.Info(ctx, "server completed the shutdown process")
 
-		ctx, cancel := context.WithTimeout(ctx, cfg.Web.ShutdownTimout)
+		shutdownCtx, cancel := context.WithTimeout(ctx, cfg.Web.ShutdownTimout)
 		defer cancel()
 
-		if err := server.Shutdown(ctx); err != nil {
+		if err := server.Shutdown(shutdownCtx); err != nil {
 			server.Close()
 			return fmt.Errorf("failed to gracefully shutdown the server: %w", err)
 		}

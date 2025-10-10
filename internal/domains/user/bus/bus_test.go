@@ -3,6 +3,7 @@ package bus_test
 import (
 	"context"
 	"errors"
+	"log"
 	"net/mail"
 	"os"
 	"testing"
@@ -13,33 +14,49 @@ import (
 	"github.com/hamidoujand/jumble/internal/domains/user/store/userdb"
 	"github.com/hamidoujand/jumble/internal/page"
 	"github.com/hamidoujand/jumble/pkg/docker"
+	"github.com/hamidoujand/jumble/pkg/telemetry"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/crypto/bcrypt"
 )
 
 var container docker.Container
+var tracer trace.Tracer
 
 func TestMain(m *testing.M) {
 	// before all
 	var err error
 	container, err = dbtest.CreateDBContainer()
 	if err != nil {
-		os.Exit(1)
+		log.Fatalf("createDBContainer: %s", err)
 	}
 
+	defer docker.StopContainer(container.Name)
+	cfg := telemetry.Config{
+		ServiceName: "user_bus_test",
+		Host:        "",
+		Build:       "v0.0.1",
+	}
+
+	cleanup, err := telemetry.SetupOTelSDK(cfg)
+	if err != nil {
+		log.Fatalf("setupOTelSDK: %s", err)
+	}
+
+	tracer = otel.Tracer("user_bus_tests")
+
+	defer cleanup(context.Background())
+
 	// tests
-	code := m.Run()
+	os.Exit(m.Run())
 
-	// after all
-	docker.StopContainer(container.Name)
-
-	os.Exit(code)
 }
 
 func Test_CreateUser(t *testing.T) {
 	t.Parallel()
 
 	db := dbtest.New(t, container, "create_user")
-	store := userdb.NewStore(db)
+	store := userdb.NewStore(db, tracer)
 
 	b := bus.New(store)
 
@@ -69,7 +86,7 @@ func Test_GetByID(t *testing.T) {
 	t.Parallel()
 
 	db := dbtest.New(t, container, "get_user_by_id")
-	store := userdb.NewStore(db)
+	store := userdb.NewStore(db, tracer)
 
 	b := bus.New(store)
 
@@ -107,7 +124,7 @@ func Test_UpdateUser(t *testing.T) {
 	t.Parallel()
 
 	db := dbtest.New(t, container, "update_user")
-	store := userdb.NewStore(db)
+	store := userdb.NewStore(db, tracer)
 
 	b := bus.New(store)
 
@@ -176,7 +193,7 @@ func Test_DeleteUser(t *testing.T) {
 	t.Parallel()
 
 	db := dbtest.New(t, container, "delete_user")
-	store := userdb.NewStore(db)
+	store := userdb.NewStore(db, tracer)
 
 	b := bus.New(store)
 
@@ -214,7 +231,7 @@ func Test_QueryByEmail(t *testing.T) {
 	t.Parallel()
 
 	db := dbtest.New(t, container, "get_user_by_email")
-	store := userdb.NewStore(db)
+	store := userdb.NewStore(db, tracer)
 
 	b := bus.New(store)
 
@@ -250,8 +267,8 @@ func Test_Query(t *testing.T) {
 	t.Parallel()
 
 	db := dbtest.New(t, container, "query_users")
-	store := userdb.NewStore(db)
 
+	store := userdb.NewStore(db, tracer)
 	b := bus.New(store)
 	querySetup(t, b)
 

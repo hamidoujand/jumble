@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-conf-datasources
+  namespace: jumble-system
+  labels:
+    app: grafana
+data:
+  sources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Tempo
+        type: tempo
+        url: http://tempo:3100 
+        access: proxy
+        isDefault: true     #Makes Tempo the default when you open Grafana
+        jsonData:
+          nodeGraph:      #Shows pretty flow diagrams of your traces
+            enabled: true
+          search:
+            hide: false     #Lets you search for traces

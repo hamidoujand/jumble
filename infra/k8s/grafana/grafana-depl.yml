@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: jumble-system
+  labels:
+    app: grafana
+spec:
+  selector:
+    matchLabels:
+      app: grafana
+  replicas: 1
+  template:
+    metadata:
+      namespace: jumble-system
+      labels:
+        app: grafana
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana:12.1.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: GF_SECURITY_ADMIN_USER
+              value: "admin"
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              value: "admin123"
+            - name: GF_FEATURE_TOGGLES_ENABLE
+              value: "tempoSearch tempoBackendSearch" #Enables search features for Tempo tracing
+          ports:
+            - containerPort: 3000
+              name: http-grafana
+          # comment out the probes on the first apply cause it takes up to ~5mins to fully init grafana, and then it will uses PVC next time.
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http-grafana
+            initialDelaySeconds: 120
+            timeoutSeconds: 10
+            failureThreshold: 3
+            periodSeconds: 30
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http-grafana
+            initialDelaySeconds: 120
+            timeoutSeconds: 10
+            failureThreshold: 3
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          volumeMounts:
+            - name: config-datasources
+              mountPath: /etc/grafana/provisioning/datasources
+            - name: grafana-storage
+              mountPath: /var/lib/grafana
+      volumes:
+        - name: config-datasources
+          configMap:
+            name: grafana-conf-datasources
+        - name: grafana-storage
+          persistentVolumeClaim:
+            claimName: grafana-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: jumble-system
+spec:
+  type: ClusterIP
+  selector:
+    app: grafana
+  ports:
+    - port: 3000
+      targetPort: http-grafana
+      protocol: TCP

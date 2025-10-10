@@ -5,20 +5,19 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/hamidoujand/jumble/pkg/logger"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
+
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
-	"go.opentelemetry.io/otel/propagation"
-
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
+	"go.opentelemetry.io/otel/trace/noop"
 
-	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
-
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/trace"
+
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 )
 
 // Config defines the information needed to init tracing.
@@ -27,124 +26,99 @@ type Config struct {
 	Host           string
 	ExcludedRoutes map[string]struct{}
 	Probability    float64
+	Build          string
 }
 
-func NewTraceProvider(log logger.Logger, cfg Config) (trace.TracerProvider, func(ctx context.Context), error) {
-	//otel exporter
-	exporter, err := otlptrace.New(
-		context.Background(),
-		otlptracegrpc.NewClient(
-			otlptracegrpc.WithInsecure(), // This should be configurable
-			otlptracegrpc.WithEndpoint(cfg.Host),
-		),
-	)
+func SetupOTelSDK(cfg Config) (func(context.Context) error, error) {
+	shutdown := func(ctx context.Context) error { return nil }
+	var provider trace.TracerProvider
 
-	if err != nil {
-		return nil, nil, fmt.Errorf("creating new exporter: %w", err)
+	switch cfg.Host {
+	case "":
+		//for tests
+		provider = noop.NewTracerProvider()
+	default:
+		//for dev & prod
+		exporter, err := otlptrace.New(
+			context.Background(),
+			otlptracegrpc.NewClient(
+				otlptracegrpc.WithInsecure(), // This should be configurable
+				otlptracegrpc.WithEndpoint(cfg.Host),
+			),
+		)
+
+		if err != nil {
+			return nil, fmt.Errorf("creating new exporter: %w", err)
+		}
+
+		tp := sdktrace.NewTracerProvider(
+			//sampler
+			sdktrace.WithSampler(sdktrace.ParentBased(newEndpointExcluder(cfg.ExcludedRoutes, cfg.Probability))),
+			//batcher
+			sdktrace.WithBatcher(exporter,
+				sdktrace.WithMaxExportBatchSize(sdktrace.DefaultMaxExportBatchSize),
+				sdktrace.WithBatchTimeout(sdktrace.DefaultScheduleDelay*time.Millisecond),
+			),
+			//resource
+			sdktrace.WithResource(
+				resource.NewWithAttributes(
+					semconv.SchemaURL,
+					semconv.ServiceNameKey.String(cfg.ServiceName),
+					semconv.ServiceVersionKey.String(cfg.Build),
+				),
+			),
+		)
+
+		shutdown = func(ctx context.Context) error {
+			tp.Shutdown(ctx)
+			return nil
+		}
+
+		provider = tp
 	}
 
-	//resource
-	resOpt := resource.NewWithAttributes(
-		semconv.SchemaURL,
-		semconv.ServiceNameKey.String(cfg.ServiceName),
-	)
-	resource := sdktrace.WithResource(resOpt)
+	//setup propagator
+	prop := newPropagator()
+	otel.SetTextMapPropagator(prop)
 
-	//batcher
-	batcherLimitOpt := sdktrace.WithMaxExportBatchSize(sdktrace.DefaultMaxExportBatchSize)
-	batcherTimoutOpt := sdktrace.WithBatchTimeout(sdktrace.DefaultScheduleDelay * time.Millisecond)
-
-	batcherOpt := sdktrace.WithBatcher(exporter, batcherLimitOpt, batcherTimoutOpt)
-
-	//sampler
-	samplerOpt := sdktrace.WithSampler(newEndpointExcluder(cfg.ExcludedRoutes, cfg.Probability))
-
-	//init provider
-	provider := sdktrace.NewTracerProvider(batcherOpt, samplerOpt, resource)
-	teardown := func(ctx context.Context) {
-		provider.Shutdown(ctx)
-	}
-
-	//set this provider as global trace provider
+	//set this provider as global provider
 	otel.SetTracerProvider(provider)
 
-	//use a customized propagator
-	//For distributed systems, combining TraceContext and Baggage is common because:
-	// TraceContext ensures trace information flows between services.
-	// Baggage allows custom key-value metadata to propagate for additional context.
-	compositeMapPropgator := propagation.NewCompositeTextMapPropagator(
+	return shutdown, nil
+}
+
+func newPropagator() propagation.TextMapPropagator {
+	return propagation.NewCompositeTextMapPropagator(
 		propagation.TraceContext{},
 		propagation.Baggage{},
 	)
-	otel.SetTextMapPropagator(compositeMapPropgator)
-	return provider, teardown, nil
 }
 
-// ==============================================================================
-func AddSpan(ctx context.Context, spanName string, keyvalues ...attribute.KeyValue) (context.Context, trace.Span) {
-	tracer, ok := ctx.Value(tracerKey).(trace.Tracer)
-	if !ok || tracer == nil {
-		return ctx, trace.SpanFromContext(ctx)
+//=============================================================================
+
+// for dev using this provider
+func newTraceProvider(serviceName string) (*sdktrace.TracerProvider, error) {
+	exporter, err := stdouttrace.New(
+		stdouttrace.WithPrettyPrint())
+
+	if err != nil {
+		return nil, fmt.Errorf("new stdouttrace: %w", err)
 	}
 
-	ctx, span := tracer.Start(ctx, spanName)
-	span.SetAttributes(keyvalues...)
+	provider := sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(
+			exporter,
+			// Default is 5s. Set to 1s for demonstrative purposes.
+			sdktrace.WithBatchTimeout(time.Second),
+		),
+		sdktrace.WithResource(
+			resource.NewWithAttributes(
+				semconv.SchemaURL,
+				semconv.ServiceNameKey.String(serviceName),
+				semconv.ServiceVersionKey.String("v0.0.1"),
+			),
+		),
+	)
 
-	return ctx, span
-}
-
-//==============================================================================
-//Custom Sampler
-
-type endpointExcluder struct {
-	endpoints   map[string]struct{}
-	probability float64
-}
-
-func newEndpointExcluder(endpoints map[string]struct{}, probability float64) endpointExcluder {
-	return endpointExcluder{
-		endpoints:   endpoints,
-		probability: probability,
-	}
-}
-
-func endpoint(parameters sdktrace.SamplingParameters) string {
-	var path, query string
-
-	for _, attr := range parameters.Attributes {
-		switch attr.Key {
-		case "url.path":
-			path = attr.Value.AsString()
-		case "url.query":
-			query = attr.Value.AsString()
-		}
-	}
-
-	switch {
-	case path == "":
-		return ""
-
-	case query == "":
-		return path
-
-	default:
-		return fmt.Sprintf("%s?%s", path, query)
-	}
-}
-
-// ShouldSample implements the sampler interface. It prevents the specified
-// endpoints from being added to the trace.
-func (ee endpointExcluder) ShouldSample(parameters sdktrace.SamplingParameters) sdktrace.SamplingResult {
-	if ep := endpoint(parameters); ep != "" {
-		if _, exists := ee.endpoints[ep]; exists {
-			return sdktrace.SamplingResult{Decision: sdktrace.Drop}
-		}
-	}
-
-	return sdktrace.TraceIDRatioBased(ee.probability).ShouldSample(parameters)
-}
-
-// Description implements the sampler interface.
-func (endpointExcluder) Description() string {
-	return "customSampler"
+	return provider, nil
 }

@@ -1,61 +1,28 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: tempo-conf
+  name: tempo-config
   namespace: jumble-system
-
 data:
-  tempo.yml: |
-    usage_report:
-     reporting_enabled: false         #do not send any data back to grafana-labs.
+  tempo.yaml: |
     server:
-     http_listen_port: 3200    # main port that tempo runs on
-
-    distributor: # how Tempo receives trace data from various sources
-      receivers: 
+      http_listen_port: 3100
+    distributor:
+      receivers:
         otlp:
           protocols:
-            http:
-              endpoint: "tempo:4318"
             grpc:
-              endpoint: "tempo:4317"
-
-    # responsible for processing and batching trace data before writing it to storage
-    ingester:
-      trace_idle_period: 10s               # waits 10s and if no span received it considers the trace as complete as writes it to store
-      max_block_bytes: 1_000_000           # Creates a new storage block when the current block reaches ~1MB
-      max_block_duration: 5m               # Forces a block to be flushed every 5 minutes, regardless of size
-
-    # compactor component is responsible for optimizing storage by merging smaller blocks into larger, more efficient blocks.
-    compactor:
-      compaction:
-        compaction_window: 1h              # blocks in this time window will be compacted together
-        max_block_bytes: 100_000_000       # maximum size of compacted blocks
-        block_retention: 1h                # Keeps original (uncompacted) blocks for 1 hour after compaction
-        compacted_block_retention: 10m     # Keeps compacted blocks for an additional 10 minutes Ensures data is available during the compaction process
-
-
-    # configures Tempo's storage layer, which handles how trace data is stored, indexed, and retrieved.
+              endpoint: 0.0.0.0:4317
+            http:
+              endpoint: 0.0.0.0:4318
     storage:
       trace:
-        backend: local                     # Stores all trace data on the local filesystem good for dev.
-        block:
-          bloom_filter_false_positive: .05   # Bloom filters quickly check if a trace ID might exist in a block
-          v2_index_downsample_bytes: 1000     # Creates an index entry every 1000 bytes of trace data
-          v2_encoding: zstd                   # Excellent compression/performance balance 
-        wal:
-          path: /tmp/tempo/wal             # where to store the the wal locally
-          v2_encoding: snappy              # WAL needs fast writes, not maximum compression so snappy it good
+        backend: local
         local:
-          path: /tmp/tempo/blocks         # Stores final block data in /tmp/tempo/blocks
+          path: /var/tempo
         pool:
-          max_workers: 100                 # Allows up to 100 concurrent storage operations Parallel reads/writes to the storage backend
-          queue_depth: 10000               # Queue up to 10,000 storage operations when all workers are busy
-
-    #configures Tempo's metrics generation capabilities
-    overrides:
-      metrics_generator_processors: [ service-graphs, span-metrics ]
-
+          max_workers: 100
+          queue_depth: 10000
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -81,21 +48,18 @@ spec:
         - image: grafana/tempo:2.8.1
           name: tempo
           ports:
-            - containerPort: 14268
-              hostPort: 14268
-            - containerPort: 3200
-              hostPort: 3200
+            - containerPort: 3100
+              name: http
             - containerPort: 4317
-              hostPort: 4317
+              name: otlp-grpc
             - containerPort: 4318
-              hostPort: 4318
-            - containerPort: 9411
-              hostPort: 9411
-          args:
-            - -config.file=/tempo-conf/tempo.yml
+              name: otlp-http
+          args: ["-config.file=/etc/tempo/tempo.yaml"]
           volumeMounts:
-            - name: config-volume
-              mountPath: /tempo-conf
+            - name: tempo-config
+              mountPath: /etc/tempo
+            - name: tempo-storage
+              mountPath: /var/tempo
           resources:
             requests:
               cpu: 100m
@@ -104,9 +68,11 @@ spec:
               cpu: 100m
               memory: 100Mi
       volumes:
-        - name: config-volume
+        - name: tempo-config
           configMap:
-            name: tempo-conf
+            name: tempo-config
+        - name: tempo-storage
+          emptyDir: {}
 
 ---
 apiVersion: v1
@@ -115,17 +81,15 @@ metadata:
   name: tempo
   namespace: jumble-system
 spec:
-  type: ClusterIP
   selector:
     app: tempo
   ports:
-    - port: 14268
-      name: "14268"
-    - port: 3200
-      name: "3200"
-    - port: 4317
-      name: "4317"
-    - port: 4318
-      name: "4318"
-    - port: 9411
-      name: "9411"
+    - name: http
+      port: 3100
+      targetPort: 3100
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318

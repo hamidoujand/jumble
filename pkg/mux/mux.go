@@ -3,13 +3,13 @@ package mux
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/hamidoujand/jumble/pkg/logger"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 // HandlerFunc represents a new custom handler that handles requests with our custom mux.
@@ -50,15 +50,7 @@ func (m *Mux) HandleFunc(method string, version string, path string, handlerFunc
 
 		ctx = SetReqMetadata(ctx, &rm)
 
-		if err := wrappedHandler(ctx, w, r); err != nil {
-			m.log.Error(ctx, "error while handling request", "err", err.Error())
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(map[string]string{
-				"error": "internal server error",
-			})
-			return
-		}
+		wrappedHandler(ctx, w, r)
 	}
 
 	if version != "" {
@@ -66,8 +58,8 @@ func (m *Mux) HandleFunc(method string, version string, path string, handlerFunc
 	}
 
 	pattern := fmt.Sprintf("%s %s", method, path)
-
-	m.ServeMux.HandleFunc(pattern, h)
+	otelHandler := otelhttp.WithRouteTag(pattern, http.HandlerFunc(h))
+	m.ServeMux.Handle(pattern, otelHandler)
 }
 
 // HandlerFuncNoMid is for routes that you do not want to go through middleware chain.
@@ -84,15 +76,7 @@ func (m *Mux) HandleFuncNoMid(method string, version string, path string, handle
 
 		ctx = SetReqMetadata(ctx, &rm)
 
-		if err := handlerFunc(ctx, w, r); err != nil {
-			m.log.Error(ctx, "error while handling request", "err", err.Error())
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(map[string]string{
-				"error": "internal server error",
-			})
-			return
-		}
+		handlerFunc(ctx, w, r)
 	}
 
 	if version != "" {
@@ -100,6 +84,6 @@ func (m *Mux) HandleFuncNoMid(method string, version string, path string, handle
 	}
 
 	pattern := fmt.Sprintf("%s %s", method, path)
-
-	m.ServeMux.HandleFunc(pattern, h)
+	otelHandler := otelhttp.WithRouteTag(pattern, http.HandlerFunc(h))
+	m.ServeMux.Handle(pattern, otelHandler)
 }

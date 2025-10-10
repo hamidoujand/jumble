@@ -17,7 +17,7 @@ import (
 	"github.com/hamidoujand/jumble/internal/errs"
 	"github.com/hamidoujand/jumble/internal/page"
 	"github.com/hamidoujand/jumble/pkg/mux"
-	"github.com/hamidoujand/jumble/pkg/telemetry"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type handler struct {
@@ -26,11 +26,12 @@ type handler struct {
 	kid         string
 	issuer      string
 	tokenMaxAge time.Duration
+	tracer      trace.Tracer
 }
 
 func (h *handler) CreateUser(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
 
-	ctx, span := telemetry.AddSpan(ctx, "user.handler.createUser")
+	ctx, span := h.tracer.Start(ctx, "user.handler.createUser")
 	defer span.End()
 
 	var nu newUser
@@ -83,7 +84,7 @@ func (h *handler) CreateUser(ctx context.Context, w http.ResponseWriter, r *http
 }
 
 func (h *handler) QueryUserByID(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
-	ctx, span := telemetry.AddSpan(ctx, "user.handler.queryByID")
+	ctx, span := h.tracer.Start(ctx, "user.handler.queryByID")
 	defer span.End()
 
 	p := r.PathValue("id")
@@ -110,7 +111,7 @@ func (h *handler) QueryUserByID(ctx context.Context, w http.ResponseWriter, r *h
 }
 
 func (h *handler) DeleteUser(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
-	ctx, span := telemetry.AddSpan(ctx, "user.handler.deleteUser")
+	ctx, span := h.tracer.Start(ctx, "user.handler.deleteUser")
 	defer span.End()
 
 	p := r.PathValue("id")
@@ -153,7 +154,7 @@ func (h *handler) DeleteUser(ctx context.Context, w http.ResponseWriter, r *http
 }
 
 func (h *handler) UpdateUser(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
-	ctx, span := telemetry.AddSpan(ctx, "user.handler.updateUser")
+	ctx, span := h.tracer.Start(ctx, "user.handler.updateUser")
 	defer span.End()
 
 	usr, err := auth.GetUser(ctx)
@@ -192,7 +193,7 @@ func (h *handler) UpdateUser(ctx context.Context, w http.ResponseWriter, r *http
 }
 
 func (h *handler) UpdateRole(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
-	ctx, span := telemetry.AddSpan(ctx, "user.handler.updateRole")
+	ctx, span := h.tracer.Start(ctx, "user.handler.updateRole")
 	defer span.End()
 
 	admin, err := auth.GetUser(ctx)
@@ -253,7 +254,7 @@ func (h *handler) UpdateRole(ctx context.Context, w http.ResponseWriter, r *http
 }
 
 func (h *handler) DisableUser(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
-	ctx, span := telemetry.AddSpan(ctx, "user.handler.disableUser")
+	ctx, span := h.tracer.Start(ctx, "user.handler.disableUser")
 	defer span.End()
 
 	p := r.PathValue("id")
@@ -304,7 +305,7 @@ func (h *handler) DisableUser(ctx context.Context, w http.ResponseWriter, r *htt
 }
 
 func (h *handler) Query(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
-	ctx, span := telemetry.AddSpan(ctx, "user.handler.query")
+	ctx, span := h.tracer.Start(ctx, "user.handler.query")
 	defer span.End()
 
 	//pagination
@@ -353,7 +354,7 @@ func (h *handler) Query(ctx context.Context, w http.ResponseWriter, r *http.Requ
 }
 
 func (h *handler) Authenticate(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
-	ctx, span := telemetry.AddSpan(ctx, "user.handler.authenticate")
+	ctx, span := h.tracer.Start(ctx, "user.handler.authenticate")
 	defer span.End()
 
 	var authData authenticate

@@ -38,6 +38,10 @@ tasks:
     cmds:
       - kubectl apply -f infra/k8s/base/namespace.yml
       - kubectl apply -f infra/k8s/tempo/tempo.yml
+      - kubectl rollout status --namespace=jumble-system --watch --timeout=120s deployment/tempo
+      - kubectl apply -f infra/k8s/grafana/grafana-pvc.yml
+      - kubectl apply -f infra/k8s/grafana/grafana-conf.yml
+      - kubectl apply -f infra/k8s/grafana/grafana-depl.yml
       - kubectl apply -f infra/k8s/jumble/jumble-conf.yml
       - kubectl apply -f infra/k8s/jumble/jumble-secret.yml
       - kubectl apply -f infra/k8s/database/database.yml
@@ -48,13 +52,18 @@ tasks:
   delete:
     silent: true
     cmds:
-      - kubectl delete -f infra/k8s/jumble/jumble-depl.yml
-      - kubectl delete -f infra/k8s/tempo/tempo.yml
-      - kubectl delete -f infra/k8s/database/database.yml
+      - kubectl delete -f infra/k8s/grafana/grafana-pvc.yml
+      - kubectl delete -f infra/k8s/grafana/grafana-conf.yml
       - kubectl delete -f infra/k8s/jumble/jumble-conf.yml
       - kubectl delete -f infra/k8s/jumble/jumble-secret.yml
-      - kubectl delete -f infra/k8s/base/namespace.yml
 
+  delete-services:
+    silent: true
+    cmds:
+      - kubectl delete -f infra/k8s/jumble/jumble-depl.yml
+      - kubectl delete -f infra/k8s/tempo/tempo.yml
+      - kubectl delete -f infra/k8s/grafana/grafana-depl.yml
+      - kubectl delete -f infra/k8s/database/database.yml
   logs:
     silent: true
     # if you have more than 1 pods, the "-l=app=jumble" matches all of them, and --max-log-requests=6 only fetches logs from 6 of
@@ -100,6 +109,10 @@ tasks:
     silent: true
     cmd: kubectl port-forward service/jumble-service 8000:8000 --namespace=jumble-system
 
+  service-grafana:
+    silent: true
+    cmd: kubectl port-forward service/grafana 3000:3000 --namespace=jumble-system
+
   load:
     silent: true
     cmd: hey -m GET -c 100 -n 10000 http://localhost:8000/v1/users
@@ -115,3 +128,7 @@ tasks:
       - openssl genrsa -out infra/keys/private.pem 2048
       # extract public key from private key
       - openssl rsa -in infra/keys/private.pem -pubout -out infra/keys/public.pem
+
+  delete-ns:
+    silent: true
+    cmd: kubectl delete -f infra/k8s/base/namespace.yml

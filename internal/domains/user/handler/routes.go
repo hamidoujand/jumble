@@ -8,6 +8,7 @@ import (
 	"github.com/hamidoujand/jumble/internal/domains/user/bus"
 	"github.com/hamidoujand/jumble/internal/mid"
 	"github.com/hamidoujand/jumble/pkg/mux"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type Conf struct {
@@ -17,6 +18,7 @@ type Conf struct {
 	Kid         string
 	Issuer      string
 	TokenMaxAge time.Duration
+	Tracer      trace.Tracer
 }
 
 // RegisterRoutes takes the mux and register endpoints on it.
@@ -29,6 +31,7 @@ func RegisterRoutes(cfg Conf) {
 		kid:         cfg.Kid,
 		issuer:      cfg.Issuer,
 		tokenMaxAge: cfg.TokenMaxAge,
+		tracer:      cfg.Tracer,
 	}
 
 	authenticated := mid.Authenticate(cfg.Auth, cfg.UserBus)

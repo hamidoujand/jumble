@@ -23,6 +23,7 @@ import (
 	"github.com/hamidoujand/jumble/internal/errs"
 	"github.com/hamidoujand/jumble/pkg/docker"
 	"github.com/hamidoujand/jumble/pkg/mux"
+	"go.opentelemetry.io/otel"
 )
 
 var container docker.Container
@@ -452,7 +453,8 @@ type setup struct {
 
 func setupPerTest(t *testing.T) setup {
 	db := dbtest.New(t, container, "create_user_api")
-	usrStore := userdb.NewStore(db)
+	tracer := otel.Tracer("user_tests")
+	usrStore := userdb.NewStore(db, tracer)
 	usrBus := bus.New(usrStore)
 
 	ks := newKeyStore(t)
