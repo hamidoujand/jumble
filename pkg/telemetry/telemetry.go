@@ -9,7 +9,6 @@ import (
 
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
-	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/trace/noop"
 
 	"go.opentelemetry.io/otel/propagation"
@@ -87,38 +86,10 @@ func SetupOTelSDK(cfg Config) (func(context.Context) error, error) {
 	return shutdown, nil
 }
 
+// ==============================================================================
 func newPropagator() propagation.TextMapPropagator {
 	return propagation.NewCompositeTextMapPropagator(
 		propagation.TraceContext{},
 		propagation.Baggage{},
 	)
-}
-
-//=============================================================================
-
-// for dev using this provider
-func newTraceProvider(serviceName string) (*sdktrace.TracerProvider, error) {
-	exporter, err := stdouttrace.New(
-		stdouttrace.WithPrettyPrint())
-
-	if err != nil {
-		return nil, fmt.Errorf("new stdouttrace: %w", err)
-	}
-
-	provider := sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(
-			exporter,
-			// Default is 5s. Set to 1s for demonstrative purposes.
-			sdktrace.WithBatchTimeout(time.Second),
-		),
-		sdktrace.WithResource(
-			resource.NewWithAttributes(
-				semconv.SchemaURL,
-				semconv.ServiceNameKey.String(serviceName),
-				semconv.ServiceVersionKey.String("v0.0.1"),
-			),
-		),
-	)
-
-	return provider, nil
 }

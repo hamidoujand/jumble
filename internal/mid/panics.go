@@ -1,27 +1,32 @@
 package mid
 
 import (
-	"context"
 	"net/http"
 	"runtime/debug"
 
-	"github.com/hamidoujand/jumble/internal/errs"
+	"github.com/gin-gonic/gin"
 	"github.com/hamidoujand/jumble/internal/metrics"
-	"github.com/hamidoujand/jumble/pkg/mux"
+	"github.com/hamidoujand/jumble/pkg/logger"
 )
 
-func Panic() mux.Middleware {
-	return func(next mux.HandlerFunc) mux.HandlerFunc {
-		return func(ctx context.Context, w http.ResponseWriter, r *http.Request) (err error) {
-			defer func() {
-				if rec := recover(); rec != nil {
-					stack := debug.Stack()
-					err = errs.Newf(http.StatusInternalServerError, "PANIC[%v] TRACE[%s]", rec, string(stack))
-					metrics.AddPanic(ctx)
+func Panic(log logger.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				stack := debug.Stack()
+				val, ok := c.Get("metrics")
+				if ok {
+					m := val.(*metrics.Metrics)
+					m.AddPanic()
 				}
-			}()
 
-			return next(ctx, w, r)
-		}
+				log.Error(c.Request.Context(), "PANIC", rec, "STACK", string(stack))
+				c.JSON(http.StatusInternalServerError, gin.H{"error": http.StatusText(http.StatusInternalServerError)})
+				c.Abort()
+				return
+			}
+		}()
+
+		c.Next()
 	}
 }

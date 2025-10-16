@@ -1,34 +1,29 @@
 package mid
 
 import (
-	"context"
 	"fmt"
-	"net/http"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/hamidoujand/jumble/pkg/logger"
-	"github.com/hamidoujand/jumble/pkg/mux"
 )
 
-func Logger(log logger.Logger) mux.Middleware {
-	return func(next mux.HandlerFunc) mux.HandlerFunc {
-		return func(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
-			startedAt := mux.GetReqStartedAt(ctx)
+func Logger(log logger.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		startedAt := time.Now()
 
-			//full path with queries
-			p := r.URL.Path
-			if r.URL.RawQuery != "" {
-				p = fmt.Sprintf("%s?%s", p, r.URL.RawQuery)
-			}
-
-			log.Info(ctx, "request started", "method", r.Method, "path", p, "remoteAddr", r.RemoteAddr)
-			err := next(ctx, w, r)
-
-			statusCode := mux.GetStatusCode(ctx)
-			took := time.Since(startedAt)
-
-			log.Info(ctx, "request completed", "method", r.Method, "path", p, "remoteAddr", r.RemoteAddr, "statusCode", statusCode, "took", took)
-			return err
+		//full path with queries
+		p := c.Request.URL.Path
+		if c.Request.URL.RawQuery != "" {
+			p = fmt.Sprintf("%s?%s", p, c.Request.URL.RawQuery)
 		}
+
+		log.Info(c.Request.Context(), "request started", "method", c.Request.Method, "path", p, "remoteAddr", c.Request.RemoteAddr)
+		c.Next()
+
+		statusCode := c.Writer.Status()
+		took := time.Since(startedAt)
+
+		log.Info(c.Request.Context(), "request completed", "method", c.Request.Method, "path", p, "remoteAddr", c.Request.RemoteAddr, "statusCode", statusCode, "took", took)
 	}
 }

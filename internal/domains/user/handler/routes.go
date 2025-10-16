@@ -1,30 +1,29 @@
 package handler
 
 import (
-	"net/http"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/hamidoujand/jumble/internal/auth"
 	"github.com/hamidoujand/jumble/internal/domains/user/bus"
 	"github.com/hamidoujand/jumble/internal/mid"
-	"github.com/hamidoujand/jumble/pkg/mux"
+	"github.com/hamidoujand/jumble/pkg/logger"
 	"go.opentelemetry.io/otel/trace"
 )
 
 type Conf struct {
-	Mux         *mux.Mux
+	router      *gin.Engine
 	UserBus     *bus.Bus
 	Auth        *auth.Auth
 	Kid         string
 	Issuer      string
 	TokenMaxAge time.Duration
 	Tracer      trace.Tracer
+	Logger      logger.Logger
 }
 
 // RegisterRoutes takes the mux and register endpoints on it.
 func RegisterRoutes(cfg Conf) {
-	const version = "v1"
-
 	usr := handler{
 		userBus:     cfg.UserBus,
 		a:           cfg.Auth,
@@ -34,29 +33,20 @@ func RegisterRoutes(cfg Conf) {
 		tracer:      cfg.Tracer,
 	}
 
-	authenticated := mid.Authenticate(cfg.Auth, cfg.UserBus)
+	users := cfg.router.Group("/v1/users")
 
-	onlyAdmin := mid.Authorized(cfg.Auth, map[string]struct{}{
-		bus.RoleAdmin.String(): {},
-	})
+	admin := mid.Authorized(usr.a, map[string]struct{}{bus.RoleAdmin.String(): {}})
+	user := mid.Authorized(usr.a, map[string]struct{}{bus.RoleUser.String(): {}})
+	adminOrUser := mid.Authorized(usr.a, map[string]struct{}{bus.RoleUser.String(): {}, bus.RoleUser.String(): {}})
 
-	onlyOwner := mid.Authorized(cfg.Auth, map[string]struct{}{
-		bus.RoleUser.String(): {},
-	})
+	authenticated := mid.Authenticate(cfg.Logger, cfg.Auth, cfg.UserBus)
 
-	adminOrOwner := mid.Authorized(cfg.Auth, map[string]struct{}{
-		bus.RoleAdmin.String(): {},
-		bus.RoleUser.String():  {},
-	})
-
-	cfg.Mux.HandleFunc(http.MethodPost, version, "/users", usr.CreateUser)
-	cfg.Mux.HandleFunc(http.MethodGet, version, "/users", usr.Query)
-	cfg.Mux.HandleFunc(http.MethodGet, version, "/users/{id}", usr.QueryUserByID, authenticated)
-	cfg.Mux.HandleFunc(http.MethodPut, version, "/users/{id}", usr.UpdateUser, authenticated, onlyOwner)
-	cfg.Mux.HandleFunc(http.MethodDelete, version, "/users/{id}", usr.DeleteUser, authenticated, adminOrOwner)
-	cfg.Mux.HandleFunc(http.MethodPut, version, "/users/roles/{id}", usr.UpdateRole, authenticated, onlyAdmin)
-	cfg.Mux.HandleFunc(http.MethodPut, version, "/users/disable/{id}", usr.DisableUser, authenticated, adminOrOwner)
-
-	cfg.Mux.HandleFunc(http.MethodPost, version, "/users/login", usr.Authenticate)
-
+	users.POST("/", usr.CreateUser)
+	users.GET("/:id", usr.QueryUserByID, authenticated)
+	users.DELETE("/:id", usr.DeleteUser, authenticated, adminOrUser)
+	users.PUT("/:id", usr.UpdateUser, authenticated, user)
+	users.PUT("/roles/:id", usr.UpdateRole, authenticated, admin)
+	users.PUT("/disable/:id", usr.DisableUser, authenticated, adminOrUser)
+	users.GET("/", usr.Query)
+	users.POST("/login", usr.Authenticate)
 }

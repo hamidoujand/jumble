@@ -4,12 +4,10 @@ import (
 	"net/http"
 
 	"github.com/hamidoujand/jumble/pkg/logger"
-	"github.com/hamidoujand/jumble/pkg/mux"
 	"github.com/jmoiron/sqlx"
 )
 
 type Conf struct {
-	Mux   *mux.Mux
 	DB    *sqlx.DB
 	Log   logger.Logger
 	Build string

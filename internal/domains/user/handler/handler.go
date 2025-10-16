@@ -2,21 +2,20 @@
 package handler
 
 import (
-	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/mail"
 	"slices"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
 	"github.com/hamidoujand/jumble/internal/auth"
 	"github.com/hamidoujand/jumble/internal/domains/user/bus"
 	"github.com/hamidoujand/jumble/internal/errs"
 	"github.com/hamidoujand/jumble/internal/page"
-	"github.com/hamidoujand/jumble/pkg/mux"
+	"github.com/hamidoujand/jumble/pkg/logger"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -27,39 +26,38 @@ type handler struct {
 	issuer      string
 	tokenMaxAge time.Duration
 	tracer      trace.Tracer
+	logger      logger.Logger
 }
 
-func (h *handler) CreateUser(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
-
-	ctx, span := h.tracer.Start(ctx, "user.handler.createUser")
+func (h *handler) CreateUser(c *gin.Context) {
+	ctx, span := h.tracer.Start(c.Request.Context(), "user.handler.createUser")
 	defer span.End()
 
 	var nu newUser
-	if err := json.NewDecoder(r.Body).Decode(&nu); err != nil {
-		return errs.Newf(http.StatusBadRequest, "invalid json: %s", err)
-	}
-
-	if err := nu.Validate(); err != nil {
-		return err
+	if err := c.ShouldBindJSON(&nu); err != nil {
+		c.Error(err)
+		return
 	}
 
 	busUser, err := toBusNewUser(nu)
 	if err != nil {
-		return errs.New(http.StatusBadRequest, err)
+		c.Error(errs.New(http.StatusBadRequest, "toBusNewUser: %s", err))
+		return
 	}
 
 	usr, err := h.userBus.Create(ctx, busUser)
-
 	if errors.Is(err, bus.ErrDuplicatedEmail) {
-		return errs.New(http.StatusBadRequest, err)
+		c.Error(errs.New(http.StatusBadRequest, "create: %s", err))
+		return
 	}
 
 	if err != nil {
-		return errs.Newf(http.StatusInternalServerError, "create: %s", err)
+		c.Error(errs.New(http.StatusInternalServerError, "create: %s", err))
+		return
 	}
 
 	appUser := toAppUser(usr)
-	c := auth.Claims{
+	claims := auth.Claims{
 		Roles: appUser.Roles,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    h.issuer,
@@ -69,219 +67,253 @@ func (h *handler) CreateUser(ctx context.Context, w http.ResponseWriter, r *http
 		},
 	}
 
-	token, err := h.a.GenerateToken(h.kid, c)
+	token, err := h.a.GenerateToken(h.kid, claims)
 	if err != nil {
-		return errs.Newf(http.StatusInternalServerError, "generateToken: %s", err)
+		c.Error(errs.New(http.StatusInternalServerError, "generateToken: %s", err))
+		return
 	}
 
 	appUser.Token = token
-
-	if err := mux.Respond(ctx, w, http.StatusCreated, appUser); err != nil {
-		return errs.Newf(http.StatusInternalServerError, "respond: %s", err)
-	}
-
-	return nil
+	c.JSON(http.StatusCreated, appUser)
 }
 
-func (h *handler) QueryUserByID(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
-	ctx, span := h.tracer.Start(ctx, "user.handler.queryByID")
+func (h *handler) QueryUserByID(c *gin.Context) {
+	ctx, span := h.tracer.Start(c.Request.Context(), "user.handler.queryByID")
 	defer span.End()
 
-	p := r.PathValue("id")
+	p := c.Param("id")
 
 	userID, err := uuid.Parse(p)
 	if err != nil {
-		return errs.Newf(http.StatusBadRequest, "invalid id: %s", err)
+		c.Error(errs.New(http.StatusBadRequest, "invalid id: %s", p))
+		return
 	}
 
 	usr, err := h.userBus.QueryByID(ctx, userID)
 	if errors.Is(err, bus.ErrUserNotFound) {
-		return errs.New(http.StatusNotFound, err)
+		c.Error(errs.New(http.StatusNotFound, "queryByID: %s", err))
+		return
 	}
 
 	if err != nil {
-		return errs.Newf(http.StatusInternalServerError, "queryByID: %s", err)
+		c.Error(errs.New(http.StatusInternalServerError, "queryByID: %s", err))
+		return
 	}
 
-	if err := mux.Respond(ctx, w, http.StatusOK, toAppUser(usr)); err != nil {
-		return errs.Newf(http.StatusInternalServerError, "respond: %s", err)
-	}
-
-	return nil
+	c.JSON(http.StatusOK, toAppUser(usr))
 }
 
-func (h *handler) DeleteUser(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
-	ctx, span := h.tracer.Start(ctx, "user.handler.deleteUser")
+func (h *handler) DeleteUser(c *gin.Context) {
+	ctx, span := h.tracer.Start(c.Request.Context(), "user.handler.deleteUser")
 	defer span.End()
 
-	p := r.PathValue("id")
+	p := c.Param("id")
 
 	userId, err := uuid.Parse(p)
 	if err != nil {
-		return errs.Newf(http.StatusBadRequest, "invalid user id: %s", err)
+		c.Error(errs.New(http.StatusBadRequest, "invalid user id: %s", p))
+		return
 	}
 
-	//fetch the user from ctx doing this action.
-	usr, err := auth.GetUser(ctx)
-	if err != nil {
-		return errs.New(http.StatusUnauthorized, err)
+	val, ok := c.Get("user")
+	if !ok {
+		c.Error(errs.New(http.StatusUnauthorized, "%s", http.StatusText(http.StatusUnauthorized)))
+		return
+	}
+
+	usr, ok := val.(bus.User)
+	if !ok {
+		c.Error(errs.New(http.StatusUnauthorized, "%s", http.StatusText(http.StatusUnauthorized)))
+		return
 	}
 
 	//either the user itself or admin can delete a user .
 	if userId != usr.ID && !isAdmin(usr.Roles) {
-		return errs.Newf(http.StatusUnauthorized, "user is unauthorized to take this action")
+		c.Error(errs.New(http.StatusUnauthorized, "unauthorized to take this action"))
+		return
 	}
 
 	targetUser, err := h.userBus.QueryByID(ctx, userId)
 	if errors.Is(err, bus.ErrUserNotFound) {
-		return errs.New(http.StatusNotFound, err)
+		c.Error(errs.New(http.StatusNotFound, "%s", err))
+		return
 	}
 
 	if err != nil {
-		return errs.Newf(http.StatusInternalServerError, "queryByID: %s", err)
+		c.Error(errs.New(http.StatusInternalServerError, "queryByID: %s", err))
+		return
 	}
 
 	//delete the target user
 	if err := h.userBus.Delete(ctx, targetUser); err != nil {
-		return errs.Newf(http.StatusInternalServerError, "delete: %s", err)
+		c.Error(errs.New(http.StatusInternalServerError, "delete: %s", err))
+		return
 	}
 
-	if err := mux.Respond(ctx, w, http.StatusNoContent, nil); err != nil {
-		return errs.Newf(http.StatusInternalServerError, "respond: %s", err)
-	}
-
-	return nil
+	c.Status(http.StatusNoContent)
 }
 
-func (h *handler) UpdateUser(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
-	ctx, span := h.tracer.Start(ctx, "user.handler.updateUser")
+func (h *handler) UpdateUser(c *gin.Context) {
+	ctx, span := h.tracer.Start(c.Request.Context(), "user.handler.updateUser")
 	defer span.End()
 
-	usr, err := auth.GetUser(ctx)
+	p := c.Param("id")
+	targetID, err := uuid.Parse(p)
 	if err != nil {
-		return errs.New(http.StatusUnauthorized, err)
+		c.Error(errs.New(http.StatusBadRequest, "invalid user id: %s", p))
+		return
+	}
+
+	val, ok := c.Get("user")
+	if !ok {
+		c.Error(errs.New(http.StatusUnauthorized, "%s", http.StatusText(http.StatusUnauthorized)))
+		return
+	}
+
+	usr, ok := val.(bus.User)
+	if !ok {
+		c.Error(errs.New(http.StatusUnauthorized, "%s", http.StatusText(http.StatusUnauthorized)))
+		return
+	}
+
+	if usr.ID != targetID {
+		c.Error(errs.New(http.StatusUnauthorized, "%s", http.StatusText(http.StatusUnauthorized)))
+		return
 	}
 
 	var uu updateUser
-	if err := json.NewDecoder(r.Body).Decode(&uu); err != nil {
-		return errs.Newf(http.StatusBadRequest, "invalid json: %s", err)
-	}
-
-	if err := uu.Validate(); err != nil {
-		return err
+	if err := c.ShouldBindJSON(&uu); err != nil {
+		c.Error(err)
+		return
 	}
 
 	busUserUpdate, err := toBusUpdateUser(uu)
 	if err != nil {
-		return errs.New(http.StatusBadRequest, err)
+		c.Error(errs.New(http.StatusBadRequest, "toUpdateBusUser: %s", err))
+		return
 	}
 
 	updated, err := h.userBus.Update(ctx, usr, busUserUpdate)
 	if errors.Is(err, bus.ErrDuplicatedEmail) {
-		return errs.New(http.StatusBadRequest, err)
+		c.Error(errs.New(http.StatusBadRequest, "%s", err))
+		return
 	}
 
 	if err != nil {
-		return errs.Newf(http.StatusInternalServerError, "update: %s", err)
+		c.Error(errs.New(http.StatusInternalServerError, "delete: %s", err))
+		return
 	}
 
-	if err := mux.Respond(ctx, w, http.StatusOK, toAppUser(updated)); err != nil {
-		return errs.Newf(http.StatusInternalServerError, "respond: %s", err)
-	}
-
-	return nil
+	c.JSON(http.StatusOK, toAppUser(updated))
 }
 
-func (h *handler) UpdateRole(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
-	ctx, span := h.tracer.Start(ctx, "user.handler.updateRole")
+func (h *handler) UpdateRole(c *gin.Context) {
+	ctx, span := h.tracer.Start(c.Request.Context(), "user.handler.updateRole")
 	defer span.End()
 
-	admin, err := auth.GetUser(ctx)
-	if err != nil {
-		return errs.New(http.StatusUnauthorized, err)
+	val, ok := c.Get("user")
+	if !ok {
+		c.Error(errs.New(http.StatusUnauthorized, "%s", http.StatusText(http.StatusUnauthorized)))
+		return
+	}
+
+	admin, ok := val.(bus.User)
+	if !ok {
+		c.Error(errs.New(http.StatusUnauthorized, "%s", http.StatusText(http.StatusUnauthorized)))
+		return
 	}
 
 	//must be an admin
 	if !isAdmin(admin.Roles) {
-		return errs.Newf(http.StatusUnauthorized, "unauthorized to take this action")
+		c.Error(errs.New(http.StatusUnauthorized, "%s", http.StatusText(http.StatusUnauthorized)))
+		return
 	}
 
 	//target userID
-	p := r.PathValue("id")
+	p := c.Param("id")
 	userId, err := uuid.Parse(p)
 	if err != nil {
-		return errs.Newf(http.StatusBadRequest, "invalid user id: %s", err)
+		c.Error(errs.New(http.StatusBadRequest, "invalid user id: %s", p))
+		return
 	}
 
 	var ur updateUserRoles
-	if err := json.NewDecoder(r.Body).Decode(&ur); err != nil {
-		return errs.Newf(http.StatusBadRequest, "invalid json: %s", err)
-	}
-
-	if err := ur.Validate(); err != nil {
-		return err
+	if err := c.ShouldBindJSON(&ur); err != nil {
+		c.Error(err)
+		return
 	}
 
 	busUpdateRoles, err := toBusUpdateUserRoles(ur)
 	if err != nil {
-		return errs.New(http.StatusBadRequest, err)
+		c.Error(errs.New(http.StatusBadRequest, "toBusUpdateUserRoles: %s", err))
+		return
 	}
 
 	//fetch the usr from db
 	usr, err := h.userBus.QueryByID(ctx, userId)
 	if errors.Is(err, bus.ErrUserNotFound) {
-		return errs.New(http.StatusNotFound, err)
+		c.Error(errs.New(http.StatusNotFound, "%s", err))
+		return
 	}
 
 	if err != nil {
-		return errs.Newf(http.StatusInternalServerError, "queryByID: %s", err)
+		c.Error(errs.New(http.StatusInternalServerError, "queryByID: %s", err))
+		return
 	}
 
 	if !usr.Enabled {
-		return errs.Newf(http.StatusBadRequest, "user is disabled")
+		c.Error(errs.New(http.StatusBadRequest, "user is disabled"))
+		return
 	}
 
 	updated, err := h.userBus.Update(ctx, usr, busUpdateRoles)
 	if err != nil {
-		return errs.Newf(http.StatusInternalServerError, "update: %s", err)
+		c.Error(errs.New(http.StatusInternalServerError, "queryByID: %s", err))
+		return
 	}
 
-	if err := mux.Respond(ctx, w, http.StatusOK, toAppUser(updated)); err != nil {
-		return errs.Newf(http.StatusInternalServerError, "respond: %s", err)
-	}
-
-	return nil
+	c.JSON(http.StatusOK, toAppUser(updated))
 }
 
-func (h *handler) DisableUser(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
-	ctx, span := h.tracer.Start(ctx, "user.handler.disableUser")
+func (h *handler) DisableUser(c *gin.Context) {
+	ctx, span := h.tracer.Start(c.Request.Context(), "user.handler.disableUser")
 	defer span.End()
 
-	p := r.PathValue("id")
+	p := c.Param("id")
 
 	userId, err := uuid.Parse(p)
 	if err != nil {
-		return errs.Newf(http.StatusBadRequest, "invalid user id: %s", err)
+		c.Error(errs.New(http.StatusBadRequest, "invalid user id: %s", p))
+		return
 	}
 
 	//fetch the user from ctx doing this action.
-	usr, err := auth.GetUser(ctx)
-	if err != nil {
-		return errs.New(http.StatusUnauthorized, err)
+	val, ok := c.Get("user")
+	if !ok {
+		c.Error(errs.New(http.StatusUnauthorized, "%s", http.StatusText(http.StatusUnauthorized)))
+		return
+	}
+	usr, ok := val.(bus.User)
+	if !ok {
+		c.Error(errs.New(http.StatusUnauthorized, "%s", http.StatusText(http.StatusUnauthorized)))
+		return
 	}
 
 	//either the user itself or admin can delete a user .
 	if userId != usr.ID && !isAdmin(usr.Roles) {
-		return errs.Newf(http.StatusUnauthorized, "user is unauthorized to take this action")
+		c.Error(errs.New(http.StatusUnauthorized, "%s", http.StatusText(http.StatusUnauthorized)))
+		return
 	}
 
 	targetUser, err := h.userBus.QueryByID(ctx, userId)
 	if errors.Is(err, bus.ErrUserNotFound) {
-		return errs.New(http.StatusNotFound, err)
+		c.Error(errs.New(http.StatusNotFound, "%s", err))
+		return
 	}
 
 	if err != nil {
-		return errs.Newf(http.StatusInternalServerError, "queryByID: %s", err)
+		c.Error(errs.New(http.StatusInternalServerError, "queryByID: %s", err))
+		return
 	}
 
 	enabled := false
@@ -294,49 +326,57 @@ func (h *handler) DisableUser(ctx context.Context, w http.ResponseWriter, r *htt
 
 	updated, err := h.userBus.Update(ctx, targetUser, busUpdateUser)
 	if err != nil {
-		return errs.Newf(http.StatusInternalServerError, "update: %s", err)
+		c.Error(errs.New(http.StatusInternalServerError, "update: %s", err))
+		return
 	}
 
-	if err := mux.Respond(ctx, w, http.StatusOK, toAppUser(updated)); err != nil {
-		return errs.Newf(http.StatusInternalServerError, "respond: %s", err)
-	}
-
-	return nil
+	c.JSON(http.StatusOK, toAppUser(updated))
 }
 
-func (h *handler) Query(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
-	ctx, span := h.tracer.Start(ctx, "user.handler.query")
+func (h *handler) Query(c *gin.Context) {
+	ctx, span := h.tracer.Start(c.Request.Context(), "user.handler.query")
 	defer span.End()
 
 	//pagination
-	p := r.URL.Query().Get("page")
-	rows := r.URL.Query().Get("rows")
+	p := c.Query("page")
+	rows := c.Query("rows")
 
 	page, err := page.Parse(p, rows)
 	if err != nil {
-		return errs.Newf(http.StatusBadRequest, "pagination: %s", err)
+		c.Error(errs.New(http.StatusBadRequest, "parse pagination: %s", err))
+		return
 	}
 
-	//filters
-	filters, err := parseFilters(r)
+	//parse filters
+	var filters Filters
+	if err := c.ShouldBindQuery(&filters); err != nil {
+		c.Error(err)
+		return
+	}
+
+	busFilter, err := filters.ToBusQueryFilter()
 	if err != nil {
-		return err
+		c.Error(errs.New(http.StatusBadRequest, "toBusQueryFilter: %s", err.Error()))
+		return
 	}
 
 	//order by
-	orderBy, err := bus.ParseOrderBy(r.URL.Query().Get("order_by"))
+	orderBy, err := bus.ParseOrderBy(c.Query("order_by"))
 	if err != nil {
-		return errs.Newf(http.StatusBadRequest, "parse order_by: %s", err)
+		c.Error(errs.New(http.StatusBadRequest, "parse order_by query: %s", err))
+		return
 	}
 
-	busUsers, err := h.userBus.Query(ctx, filters, orderBy, page)
+	busUsers, err := h.userBus.Query(ctx, busFilter, orderBy, page)
 	if err != nil {
-		return errs.Newf(http.StatusInternalServerError, "query: %s", err)
+		c.Error(errs.New(http.StatusInternalServerError, "query: %s", err))
+		return
 	}
 
-	total, err := h.userBus.Count(ctx, filters)
+	total, err := h.userBus.Count(ctx, busFilter)
 	if err != nil {
-		return errs.Newf(http.StatusInternalServerError, "count: %s", err)
+		c.Error(errs.New(http.StatusInternalServerError, "count: %s", err))
+		return
 	}
 
 	users := make([]user, len(busUsers))
@@ -345,38 +385,32 @@ func (h *handler) Query(ctx context.Context, w http.ResponseWriter, r *http.Requ
 	}
 
 	qr := newQueryResult(users, total, page.Number, page.Rows)
-
-	if err := mux.Respond(ctx, w, http.StatusOK, qr); err != nil {
-		return errs.Newf(http.StatusInternalServerError, "respond: %s", err)
-	}
-
-	return nil
+	c.JSON(http.StatusOK, qr)
 }
 
-func (h *handler) Authenticate(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
-	ctx, span := h.tracer.Start(ctx, "user.handler.authenticate")
+func (h *handler) Authenticate(c *gin.Context) {
+	ctx, span := h.tracer.Start(c.Request.Context(), "user.handler.authenticate")
 	defer span.End()
 
 	var authData authenticate
-	if err := json.NewDecoder(r.Body).Decode(&authData); err != nil {
-		return errs.Newf(http.StatusBadRequest, "invalid json: %s", err)
-	}
-
-	if err := authData.Validate(); err != nil {
-		return err
+	if err := c.ShouldBindJSON(&authData); err != nil {
+		c.Error(err)
+		return
 	}
 
 	email, err := mail.ParseAddress(authData.Email)
 	if err != nil {
-		return errs.Newf(http.StatusBadRequest, "invalid email or password")
+		c.Error(errs.New(http.StatusBadRequest, "parseAddress: %s", err))
+		return
 	}
 
 	usr, err := h.userBus.Authenticate(ctx, *email, authData.Password)
 	if err != nil {
-		return errs.Newf(http.StatusBadRequest, "invalid email or password")
+		c.Error(errs.New(http.StatusBadRequest, "invalid email or password: %s", err))
+		return
 	}
 
-	c := auth.Claims{
+	claims := auth.Claims{
 		Roles: bus.RolesToString(usr.Roles),
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    h.issuer,
@@ -386,18 +420,14 @@ func (h *handler) Authenticate(ctx context.Context, w http.ResponseWriter, r *ht
 		},
 	}
 
-	token, err := h.a.GenerateToken(h.kid, c)
+	token, err := h.a.GenerateToken(h.kid, claims)
 	if err != nil {
-		return errs.Newf(http.StatusInternalServerError, "generateToken: %s", err)
+		c.Error(errs.New(http.StatusInternalServerError, "generateToken: %s", err))
+		return
 	}
 
 	t := Token{Token: token}
-
-	if err := mux.Respond(ctx, w, http.StatusCreated, t); err != nil {
-		return errs.Newf(http.StatusInternalServerError, "respond: %s", err)
-	}
-
-	return nil
+	c.JSON(http.StatusOK, t)
 }
 
 // ==============================================================================

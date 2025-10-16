@@ -2,12 +2,10 @@ package handler
 
 import (
 	"fmt"
-	"net/http"
 	"net/mail"
 	"time"
 
 	"github.com/hamidoujand/jumble/internal/domains/user/bus"
-	"github.com/hamidoujand/jumble/internal/errs"
 )
 
 type user struct {
@@ -54,18 +52,9 @@ func newQueryResult(users []user, total int, page int, rows int) QueryResult {
 
 // ==============================================================================
 type authenticate struct {
-	Email           string `json:"email" validate:"required,email"`
-	Password        string `json:"password" validate:"required,min=8,max=128"`
-	PasswordConfirm string `json:"passwordConfirm" validate:"required,eqfield=Password"`
-}
-
-func (au authenticate) Validate() error {
-	fields := errs.Check(au)
-	if len(fields) == 0 {
-		return nil
-	}
-
-	return errs.NewValidationErr(http.StatusBadRequest, fields)
+	Email           string `json:"email" binding:"required,email"`
+	Password        string `json:"password" binding:"required,min=8,max=128"`
+	PasswordConfirm string `json:"passwordConfirm" binding:"required,eqfield=Password"`
 }
 
 // ==============================================================================
@@ -76,22 +65,12 @@ type Token struct {
 //==============================================================================
 
 type newUser struct {
-	Name            string   `json:"name" validate:"required,min=4"`
-	Email           string   `json:"email" validate:"required,email"`
-	Roles           []string `json:"roles" validate:"required"`
-	Department      string   `json:"department" validate:"required,oneof=sales shipping marketing"`
-	Password        string   `json:"password" validate:"required,min=8,max=128"`
-	PasswordConfirm string   `json:"passwordConfirm" validate:"required,eqfield=Password"`
-}
-
-func (nu newUser) Validate() error {
-	fields := errs.Check(nu)
-	if len(fields) == 0 {
-		return nil
-	}
-
-	//errs
-	return errs.NewValidationErr(http.StatusBadRequest, fields)
+	Name            string   `json:"name" binding:"required,min=4"`
+	Email           string   `json:"email" binding:"required,email"`
+	Roles           []string `json:"roles" binding:"gt=0,dive,required,oneof=admin user"`
+	Department      string   `json:"department" binding:"required,oneof=sales shipping marketing"`
+	Password        string   `json:"password" binding:"required,min=8,max=128"`
+	PasswordConfirm string   `json:"passwordConfirm" binding:"required,eqfield=Password"`
 }
 
 func toBusNewUser(nu newUser) (bus.NewUser, error) {
@@ -116,21 +95,12 @@ func toBusNewUser(nu newUser) (bus.NewUser, error) {
 
 // ==============================================================================
 type updateUser struct {
-	Name            *string `json:"name" validate:"omitempty,min=4"`
-	Email           *string `json:"email" validate:"omitempty,email"`
-	Deaprtment      *string `json:"department" validate:"omitempty,oneof=sales shipping marketing"`
-	Password        *string `json:"password" validate:"omitempty,min=8,max=128"`
-	PasswordConfirm *string `json:"passwordConfirm" validate:"omitempty,eqfield=Password"`
+	Name            *string `json:"name" binding:"omitempty,min=4"`
+	Email           *string `json:"email" binding:"omitempty,email"`
+	Deaprtment      *string `json:"department" binding:"omitempty,oneof=sales shipping marketing"`
+	Password        *string `json:"password" binding:"omitempty,min=8,max=128"`
+	PasswordConfirm *string `json:"passwordConfirm" binding:"omitempty,eqfield=Password"`
 	Enabled         *bool   `json:"enabled"`
-}
-
-func (uu updateUser) Validate() error {
-	fields := errs.Check(uu)
-	if len(fields) == 0 {
-		return nil
-	}
-
-	return errs.NewValidationErr(http.StatusBadRequest, fields)
 }
 
 func toBusUpdateUser(uu updateUser) (bus.UpdateUser, error) {
@@ -151,16 +121,7 @@ func toBusUpdateUser(uu updateUser) (bus.UpdateUser, error) {
 //==============================================================================
 
 type updateUserRoles struct {
-	Roles []string `json:"roles" validate:"required,oneof=user admin"`
-}
-
-func (ur updateUserRoles) Validate() error {
-	filed := errs.Check(ur)
-	if len(filed) == 0 {
-		return nil
-	}
-
-	return errs.NewValidationErr(http.StatusBadRequest, filed)
+	Roles []string `json:"roles" binding:"required,oneof=user admin"`
 }
 
 func toBusUpdateUserRoles(ur updateUserRoles) (bus.UpdateUser, error) {

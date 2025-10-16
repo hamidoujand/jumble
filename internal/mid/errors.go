@@ -1,45 +1,85 @@
 package mid
 
 import (
-	"context"
 	"errors"
-	"fmt"
 	"net/http"
+	"reflect"
+	"strings"
 
+	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
+	"github.com/go-playground/locales/en"
+	ut "github.com/go-playground/universal-translator"
+	"github.com/go-playground/validator/v10"
+	en_translations "github.com/go-playground/validator/v10/translations/en"
 	"github.com/hamidoujand/jumble/internal/errs"
 	"github.com/hamidoujand/jumble/pkg/logger"
-	"github.com/hamidoujand/jumble/pkg/mux"
 )
 
-func Errors(log logger.Logger) mux.Middleware {
-	return func(next mux.HandlerFunc) mux.HandlerFunc {
-		return func(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
-			//no err
-			err := next(ctx, w, r)
-			if err == nil {
-				return nil
-			}
+var translator ut.Translator
 
-			//err
+func init() {
+	//setup
+	if validate, ok := binding.Validator.Engine().(*validator.Validate); ok {
+		translator, _ = ut.New(en.New(), en.New()).GetTranslator("en")
+		en_translations.RegisterDefaultTranslations(validate, translator)
+
+		//using json tag names instead of field names
+		validate.RegisterTagNameFunc(func(field reflect.StructField) string {
+			tag := field.Tag.Get("json")
+			name := strings.SplitN(tag, ",", 2)[0]
+
+			if name == "-" {
+				return ""
+			}
+			return name
+		})
+	}
+}
+
+func Error(log logger.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Next() // Process the request first.
+
+		// Check if response already written or no errors
+		if c.Writer.Written() || len(c.Errors) == 0 {
+			return
+		}
+
+		//check for errors
+		if len(c.Errors) > 0 {
+			err := c.Errors.Last().Err
 			var appErr *errs.Error
-			if !errors.As(err, &appErr) {
-				//unknown error, INTERNAL
-				internal := errs.Newf(http.StatusInternalServerError, "Internal server error")
-				appErr, _ = internal.(*errs.Error)
+			var validationErrors validator.ValidationErrors
+
+			switch {
+			case errors.As(err, &appErr):
+				//app errors
+				log.Error(c.Request.Context(), "error while handling request", "err", err, "fileName", appErr.FileName, "funcName", appErr.FuncName)
+				//only the internal server errors need a generic err message so we do not leak any info
+				if appErr.Code == http.StatusInternalServerError {
+					appErr.Message = http.StatusText(http.StatusInternalServerError)
+				}
+
+				c.JSON(appErr.Code, appErr)
+			case errors.As(err, &validationErrors):
+				//model validation errors
+				fieldErrs := make(map[string]string, len(validationErrors))
+				for _, e := range validationErrors {
+					fieldErrs[e.Field()] = e.Translate(translator)
+				}
+				err := errs.Error{
+					Code:    http.StatusBadRequest,
+					Message: "validation failed",
+					Fields:  fieldErrs,
+				}
+				c.JSON(err.Code, err)
+			default:
+				//unknown errors
+				log.Error(c.Request.Context(), "unknown error", "error", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": http.StatusText(http.StatusInternalServerError)})
 			}
 
-			//log the error
-			log.Error(ctx, "handled error during request", "err", err, "fileName", appErr.FileName, "funcName", appErr.FuncName)
-
-			//after loggin of InternalServerErrors, we need to change their message to not leak info to client
-			if appErr.Code == http.StatusInternalServerError {
-				appErr.Message = http.StatusText(http.StatusInternalServerError)
-			}
-
-			if err := mux.Respond(ctx, w, appErr.Code, appErr); err != nil {
-				return fmt.Errorf("failed to send the error to client: %w", err)
-			}
-			return nil
 		}
 	}
 }

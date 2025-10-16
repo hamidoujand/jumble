@@ -14,17 +14,18 @@ import (
 	"time"
 
 	"github.com/ardanlabs/conf/v3"
+	"github.com/gin-gonic/gin"
 	"github.com/hamidoujand/jumble/internal/auth"
 	"github.com/hamidoujand/jumble/internal/debug"
 	healthHandlers "github.com/hamidoujand/jumble/internal/domains/health/handler"
 	"github.com/hamidoujand/jumble/internal/domains/user/bus"
 	userHandlers "github.com/hamidoujand/jumble/internal/domains/user/handler"
 	"github.com/hamidoujand/jumble/internal/domains/user/store/userdb"
+	"github.com/hamidoujand/jumble/internal/metrics"
 	"github.com/hamidoujand/jumble/internal/mid"
 	"github.com/hamidoujand/jumble/internal/sqldb"
 	"github.com/hamidoujand/jumble/pkg/keystore"
 	"github.com/hamidoujand/jumble/pkg/logger"
-	"github.com/hamidoujand/jumble/pkg/mux"
 	"github.com/hamidoujand/jumble/pkg/telemetry"
 	"go.opentelemetry.io/otel"
 )
@@ -35,7 +36,7 @@ var build = "development"
 
 func main() {
 	traceIDFn := func(ctx context.Context) string {
-		return mux.GetTraceID(ctx).String()
+		return telemetry.GetTraceID(ctx)
 	}
 	//os.Interrupt is going to be platform independent for example on UNIX it mapped to "syscall.SIGINT" on Windows to
 	//something else, so we need a flexibility in here so we use os.Interrupt as well.
@@ -199,27 +200,30 @@ func run(ctx context.Context, log logger.Logger) error {
 	log.Info(ctx, "auth initialized", "key-count", count)
 
 	//==========================================================================
-	// Mux init
-	m := mux.New(log,
-		//global middleware
-		mid.Logger(log),
-		mid.Errors(log),
-		mid.Metrics(),
-		mid.Panic(),
-	)
+	// Metrics init
+	m := metrics.New()
+
+	//==========================================================================
+	// Router init
+	r := gin.New()
+
+	//middleare stack
+	r.Use(mid.Telemetry(tracer))
+	r.Use(mid.Logger(log))
+	r.Use(mid.Metrics(m))
+	r.Use(mid.Panic(log))
 
 	userHandlers.RegisterRoutes(userHandlers.Conf{
-		Mux:         m,
 		UserBus:     usrBus,
 		Auth:        a,
 		Kid:         validActiveKid,
 		Issuer:      cfg.Auth.Issuer,
 		TokenMaxAge: cfg.Auth.TokenMaxAge,
 		Tracer:      tracer,
+		Logger:      log,
 	})
 
 	healthCheckMux := healthHandlers.RegisterRoutes(healthHandlers.Conf{
-		Mux:   m,
 		DB:    db,
 		Log:   log,
 		Build: build,
@@ -238,7 +242,7 @@ func run(ctx context.Context, log logger.Logger) error {
 	// API Server
 	server := http.Server{
 		Addr:         cfg.Web.APIHost,
-		Handler:      m,
+		Handler:      r,
 		ReadTimeout:  cfg.Web.ReadTimeout,
 		WriteTimeout: cfg.Web.WriteTimeout,
 		IdleTimeout:  cfg.Web.IdleTimeout,
