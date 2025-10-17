@@ -221,6 +221,7 @@ func run(ctx context.Context, log logger.Logger) error {
 		TokenMaxAge: cfg.Auth.TokenMaxAge,
 		Tracer:      tracer,
 		Logger:      log,
+		Router:      r,
 	})
 
 	healthCheckMux := healthHandlers.RegisterRoutes(healthHandlers.Conf{

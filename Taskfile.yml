@@ -56,6 +56,7 @@ tasks:
       - kubectl delete -f infra/k8s/grafana/grafana-conf.yml
       - kubectl delete -f infra/k8s/jumble/jumble-conf.yml
       - kubectl delete -f infra/k8s/jumble/jumble-secret.yml
+      - kubectl delete -f infra/k8s/base/namespace.yml
 
   delete-services:
     silent: true
@@ -128,7 +129,3 @@ tasks:
       - openssl genrsa -out infra/keys/private.pem 2048
       # extract public key from private key
       - openssl rsa -in infra/keys/private.pem -pubout -out infra/keys/public.pem
-
-  delete-ns:
-    silent: true
-    cmd: kubectl delete -f infra/k8s/base/namespace.yml

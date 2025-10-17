@@ -12,7 +12,7 @@ import (
 )
 
 type Conf struct {
-	router      *gin.Engine
+	Router      *gin.Engine
 	UserBus     *bus.Bus
 	Auth        *auth.Auth
 	Kid         string
@@ -33,7 +33,7 @@ func RegisterRoutes(cfg Conf) {
 		tracer:      cfg.Tracer,
 	}
 
-	users := cfg.router.Group("/v1/users")
+	users := cfg.Router.Group("/v1/users")
 
 	admin := mid.Authorized(usr.a, map[string]struct{}{bus.RoleAdmin.String(): {}})
 	user := mid.Authorized(usr.a, map[string]struct{}{bus.RoleUser.String(): {}})
