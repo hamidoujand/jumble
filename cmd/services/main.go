@@ -79,7 +79,7 @@ func run(ctx context.Context, log logger.Logger) error {
 			User     string `conf:"default:postgres"`
 			Password string `conf:"default:postgres,mask"`
 			//the app and db running in the same namespace, no need for cross namespace service discovery.
-			Host        string `conf:"default:database-service"`
+			Host        string `conf:"default:database:5432"`
 			Name        string `conf:"default:postgres"`
 			MaxIdleConn int    `conf:"default:0"` //needs load testing
 			MaxOpenConn int    `conf:"default:0"`
@@ -94,9 +94,10 @@ func run(ctx context.Context, log logger.Logger) error {
 		}
 
 		Tempo struct {
-			Host        string  `conf:"default:tempo:4317"`
-			ServiceName string  `conf:"default:jumble"`
-			Probability float64 `conf:"default:0.05"`
+			Host string `conf:"default:tempo:4318"`
+			// Host        string  `conf:"default:dev"`
+			ServiceName string  `conf:"default:jumble-service"`
+			Probability float64 `conf:"default:1"`
 		}
 	}{}
 
@@ -157,11 +158,8 @@ func run(ctx context.Context, log logger.Logger) error {
 		Host:        cfg.Tempo.Host,
 		Probability: cfg.Tempo.Probability,
 		Build:       build,
-		ExcludedRoutes: map[string]struct{}{
-			"/v1/readiness/": {},
-			"/v1/liveness/":  {},
-		},
 	})
+
 	if err != nil {
 		return fmt.Errorf("setupOTelSDK: %w", err)
 	}
@@ -183,6 +181,8 @@ func run(ctx context.Context, log logger.Logger) error {
 	if err != nil {
 		return fmt.Errorf("loadFromFileSystem: %w", err)
 	}
+
+	log.Info(ctx, "loaded rsa keys into in-memory keystore", "count", count)
 
 	//set the active kid
 	if err := ks.SetActiveKey(cfg.Auth.ActiveKey); err != nil {

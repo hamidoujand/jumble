@@ -129,3 +129,15 @@ tasks:
       - openssl genrsa -out infra/keys/private.pem 2048
       # extract public key from private key
       - openssl rsa -in infra/keys/private.pem -pubout -out infra/keys/public.pem
+
+  #-----------------------------------------------------------------------------
+  # docker compose
+  up:
+    silent: true
+    cmds:
+      - docker compose -f infra/compose/docker-compose.yml -p compose up -d
+  down:
+    silent: true
+    cmds:
+      - docker compose -f infra/compose/docker-compose.yml -p compose down --remove-orphans
+      - docker network prune -f

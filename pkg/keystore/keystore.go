@@ -100,8 +100,7 @@ func (ks *KeyStore) LoadFromFileSystem(fsys fs.FS) (int, error) {
 		}
 
 		//filename will be uuid.pem and will be used as the ID of that key.
-
-		id := strings.TrimSuffix(filepath.Base(path), ".pem")
+		id := strings.TrimSpace(strings.TrimSuffix(filepath.Base(path), ".pem"))
 
 		key := Key{
 			private: privateKey,

@@ -1,0 +1,142 @@
+services:
+  database:
+    image: postgres:17
+    pull_policy: if_not_present
+    container_name: database
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_PASSWORD=postgres
+    volumes:
+      - database_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost -U postgres"]
+      interval: 10s
+      timeout: 30s
+      retries: 5
+      start_period: 30s
+
+    cpu_count: 1
+
+  tempo:
+    image: grafana/tempo:2.8.1
+    pull_policy: if_not_present
+    container_name: tempo
+    hostname: tempo
+    command: ["-config.file=/etc/tempo/tempo.yml"]
+    ports:
+      - "3100:3100" # HTTP
+      - "4317:4317" # OTLP gRPC
+      - "4318:4318" # OTLP HTTP
+    volumes:
+      - ./tempo/tempo.yml:/etc/tempo/tempo.yml:ro
+      - tempo_data:/var/tempo
+    environment:
+      - TEMPO_STORAGE_TRACE_BACKEND=local
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3100/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  grafana:
+    image: grafana/grafana:12.1.0
+    pull_policy: if_not_present
+    container_name: grafana
+    hostname: grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+      - GF_FEATURE_TOGGLES_ENABLE=tempoSearch tempoBackendSearch
+    ports:
+      - "9000:3000"
+    volumes:
+      - ./grafana/datasource.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - grafana_data:/var/lib/grafana
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    depends_on:
+      - tempo
+  jumble-migrate:
+    build:
+      context: ..
+      dockerfile: docker/jumble.dockerfile
+    image: localhost/hamidoujand/jumble:0.0.1
+    container_name: jumble-migrate
+    command:
+      [
+        "./admin",
+        "migrate",
+        "--user=postgres",
+        "--pass=postgres",
+        "--host=database",
+        "--name=postgres",
+      ]
+    environment:
+      - JUMBE_DB_USER=postgres
+      - JUMBE_DB_PASSWORD=postgres
+      - JUMBE_DB_HOST=database
+      - JUMBE_DB_NAME=postgres
+    depends_on:
+      database:
+        condition: service_healthy
+    restart: no
+  jumble:
+    image: localhost/hamidoujand/jumble:0.0.1
+    build:
+      context: .. #parent dir from where docker-compose is.
+      dockerfile: docker/jumble.dockerfile
+    container_name: jumble
+    hostname: jumble
+    ports:
+      - "8080:8000"
+      - "8081:3000"
+      - "8082:9000"
+    environment:
+      # Database configuration
+      - JUMBE_DB_USER=postgres
+      - JUMBE_DB_PASSWORD=postgres
+      - JUMBE_DB_HOST=database
+      - JUMBE_DB_NAME=postgres
+      - JUMBE_DB_DISABLE_TLS=true
+
+      # Go runtime configuration
+      - GOGC=off
+      - GOMEMLIMIT=209715200 #200MB
+      - GOMAXPROCS=1
+
+    volumes:
+      - ./secrets/rsa-keys:/etc/rsa-keys:ro
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/v1/readiness"]
+      interval: 10s
+      timeout: 5s
+      retries: 2
+      start_period: 5s
+    depends_on:
+      database:
+        condition: service_healthy
+      jumble-migrate:
+        condition: service_completed_successfully
+      tempo:
+        condition: service_started
+
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 200M
+        reservations:
+          cpus: "0.25"
+          memory: 200M
+
+volumes:
+  database_data:
+  grafana_data:
+  tempo_data:

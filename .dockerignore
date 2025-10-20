@@ -6,3 +6,4 @@ TaskFile.yml
 .dockerignore
 README.md
 request.http
+infra/compose/*
