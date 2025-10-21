@@ -44,15 +44,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	var env logger.Environment
-
-	if build == "development" {
-		env = logger.EnvironmentDev
-	} else {
-		env = logger.EnvironmentProd
-	}
-
-	log := logger.New(os.Stdout, logger.LevelDebug, env, "jumble", traceIDFn)
+	log := logger.New(os.Stdout, logger.LevelDebug, "jumble", traceIDFn)
 
 	if err := run(ctx, log); err != nil {
 		log.Error(ctx, "main failed to execute run", "err", err.Error())
@@ -60,7 +52,7 @@ func main() {
 	}
 }
 
-func run(ctx context.Context, log logger.Logger) error {
+func run(ctx context.Context, log *logger.Logger) error {
 	log.Info(ctx, "run", "build", build, "GOMAXPROCS", runtime.GOMAXPROCS(0))
 
 	//configuration
@@ -247,7 +239,7 @@ func run(ctx context.Context, log logger.Logger) error {
 		ReadTimeout:  cfg.Web.ReadTimeout,
 		WriteTimeout: cfg.Web.WriteTimeout,
 		IdleTimeout:  cfg.Web.IdleTimeout,
-		ErrorLog:     logger.NewStdLogger(log, logger.LevelError),
+		ErrorLog:     log.StdLogger(logger.LevelError),
 		BaseContext:  func(_ net.Listener) context.Context { return ctx },
 	}
 

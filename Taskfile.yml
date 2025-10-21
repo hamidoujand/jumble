@@ -140,4 +140,3 @@ tasks:
     silent: true
     cmds:
       - docker compose -f infra/compose/docker-compose.yml -p compose down --remove-orphans
-      - docker network prune -f

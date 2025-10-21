@@ -14,7 +14,7 @@ import (
 	"github.com/hamidoujand/jumble/pkg/logger"
 )
 
-func Authenticate(log logger.Logger, a *auth.Auth, usrBus *bus.Bus) gin.HandlerFunc {
+func Authenticate(log *logger.Logger, a *auth.Auth, usrBus *bus.Bus) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// using a 5 seconds ctx to hit the db
 		ctx, cancel := context.WithTimeout(c.Request.Context(), time.Second*5)

@@ -27,14 +27,6 @@ const (
 	LevelError = Level(slog.LevelError)
 )
 
-// Environment represents the environment that logger being used.
-type Environment int
-
-const (
-	EnvironmentDev  Environment = 1
-	EnvironmentProd Environment = 2
-)
-
 // Logger represents a logger with a custom handler to log information.
 type Logger struct {
 	//not using embedding since the relation between logger and handler follows
@@ -49,9 +41,9 @@ type Logger struct {
 }
 
 // New creates a logger and returns it.
-func New(w io.Writer, minLevel Level, env Environment, serviceName string, traceIDFn TraceIDFn) Logger {
-	handler := createHandler(w, serviceName, minLevel, env)
-	return Logger{
+func New(w io.Writer, minLevel Level, serviceName string, traceIDFn TraceIDFn) *Logger {
+	handler := createHandler(w, serviceName, minLevel)
+	return &Logger{
 		handler:   handler,
 		discard:   w == io.Discard,
 		traceIDFn: traceIDFn,
@@ -59,7 +51,7 @@ func New(w io.Writer, minLevel Level, env Environment, serviceName string, trace
 }
 
 // Debug logs at the LevelDebug.
-func (l Logger) Debug(ctx context.Context, msg string, args ...any) {
+func (l *Logger) Debug(ctx context.Context, msg string, args ...any) {
 	if l.discard {
 		return
 	}
@@ -72,7 +64,7 @@ func (l Logger) Debug(ctx context.Context, msg string, args ...any) {
 }
 
 // Debugc logs at the LevelDebug and callstack position caller.
-func (l Logger) Debugc(ctx context.Context, caller int, msg string, args ...any) {
+func (l *Logger) Debugc(ctx context.Context, caller int, msg string, args ...any) {
 	if l.discard {
 		return
 	}
@@ -81,7 +73,7 @@ func (l Logger) Debugc(ctx context.Context, caller int, msg string, args ...any)
 }
 
 // Info logs at the LevelInfo.
-func (l Logger) Info(ctx context.Context, msg string, args ...any) {
+func (l *Logger) Info(ctx context.Context, msg string, args ...any) {
 	if l.discard {
 		return
 	}
@@ -90,7 +82,7 @@ func (l Logger) Info(ctx context.Context, msg string, args ...any) {
 }
 
 // Infoc logs at the LevelInfo and callstack position caller.
-func (l Logger) Infoc(ctx context.Context, caller int, msg string, args ...any) {
+func (l *Logger) Infoc(ctx context.Context, caller int, msg string, args ...any) {
 	if l.discard {
 		return
 	}
@@ -99,7 +91,7 @@ func (l Logger) Infoc(ctx context.Context, caller int, msg string, args ...any) 
 }
 
 // Warn logs at the LevelWarn.
-func (l Logger) Warn(ctx context.Context, msg string, args ...any) {
+func (l *Logger) Warn(ctx context.Context, msg string, args ...any) {
 	if l.discard {
 		return
 	}
@@ -108,7 +100,7 @@ func (l Logger) Warn(ctx context.Context, msg string, args ...any) {
 }
 
 // Warnc logs at the LevelWarn and callstack position caller.
-func (l Logger) Warnc(ctx context.Context, caller int, msg string, args ...any) {
+func (l *Logger) Warnc(ctx context.Context, caller int, msg string, args ...any) {
 	if l.discard {
 		return
 	}
@@ -117,7 +109,7 @@ func (l Logger) Warnc(ctx context.Context, caller int, msg string, args ...any) 
 }
 
 // Error logs at the LevelError.
-func (l Logger) Error(ctx context.Context, msg string, args ...any) {
+func (l *Logger) Error(ctx context.Context, msg string, args ...any) {
 	if l.discard {
 		return
 	}
@@ -126,7 +118,7 @@ func (l Logger) Error(ctx context.Context, msg string, args ...any) {
 }
 
 // Errorc logs at the LevelError and callstack position caller.
-func (l Logger) Errorc(ctx context.Context, caller int, msg string, args ...any) {
+func (l *Logger) Errorc(ctx context.Context, caller int, msg string, args ...any) {
 	if l.discard {
 		return
 	}
@@ -134,12 +126,12 @@ func (l Logger) Errorc(ctx context.Context, caller int, msg string, args ...any)
 	l.write(ctx, LevelError, caller, msg, args...)
 }
 
-// NewStdLogger takes a Logger and returns a standard logger can be used in http.server to log error messages.
-func NewStdLogger(log Logger, level Level) *log.Logger {
-	return slog.NewLogLogger(log.handler, slog.Level(level))
+// StdLogger takes a Logger and returns a standard logger can be used in http.server to log error messages.
+func (l *Logger) StdLogger(level Level) *log.Logger {
+	return slog.NewLogLogger(l.handler, slog.Level(level))
 }
 
-func (l Logger) write(ctx context.Context, level Level, skipStack int, msg string, args ...any) {
+func (l *Logger) write(ctx context.Context, level Level, skipStack int, msg string, args ...any) {
 	//check to see if log is enabled for this level
 	slogLevel := slog.Level(level)
 	if !l.handler.Enabled(ctx, slogLevel) {
@@ -180,7 +172,7 @@ func (l Logger) write(ctx context.Context, level Level, skipStack int, msg strin
 
 //==============================================================================
 
-func createHandler(w io.Writer, service string, minLevel Level, env Environment) slog.Handler {
+func createHandler(w io.Writer, service string, minLevel Level) slog.Handler {
 	//custom file name
 	fn := func(groups []string, attr slog.Attr) slog.Attr {
 		if attr.Key == slog.SourceKey {
@@ -197,21 +189,13 @@ func createHandler(w io.Writer, service string, minLevel Level, env Environment)
 	}
 
 	//create handler
-	var handler slog.Handler
-
-	if env == EnvironmentProd {
-		//json handler
-		handler = slog.NewJSONHandler(w, &slog.HandlerOptions{AddSource: true, Level: slog.Level(minLevel), ReplaceAttr: fn})
-	} else {
-		//text handler
-		handler = slog.NewTextHandler(w, &slog.HandlerOptions{AddSource: true, Level: slog.Level(minLevel), ReplaceAttr: fn})
-	}
+	h := slog.NewTextHandler(w, &slog.HandlerOptions{AddSource: true, Level: slog.Level(minLevel), ReplaceAttr: fn})
 
 	//adding default attrs
 	attrs := []slog.Attr{
 		{Key: "service", Value: slog.StringValue(service)},
 	}
 
-	handler = handler.WithAttrs(attrs)
+	handler := h.WithAttrs(attrs)
 	return handler
 }

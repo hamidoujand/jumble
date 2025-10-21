@@ -9,7 +9,7 @@ import (
 	"github.com/hamidoujand/jumble/pkg/logger"
 )
 
-func Panic(log logger.Logger) gin.HandlerFunc {
+func Panic(log *logger.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		defer func() {
 			if rec := recover(); rec != nil {

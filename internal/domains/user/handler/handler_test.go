@@ -468,7 +468,7 @@ func setupPerTest(t *testing.T) setup {
 
 	var output bytes.Buffer
 	fn := func(_ context.Context) string { return "0000000000000000000000000000000" }
-	logger := logger.New(&output, logger.LevelDebug, logger.EnvironmentDev, "handler_test", fn)
+	logger := logger.New(&output, logger.LevelDebug, "handler_test", fn)
 
 	h := handler{
 		userBus:     usrBus,
@@ -477,7 +477,6 @@ func setupPerTest(t *testing.T) setup {
 		issuer:      issuer,
 		tokenMaxAge: time.Minute,
 		tracer:      tracer,
-		logger:      logger,
 	}
 
 	router := gin.New()

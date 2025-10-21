@@ -8,7 +8,7 @@ import (
 	"github.com/hamidoujand/jumble/pkg/logger"
 )
 
-func Logger(log logger.Logger) gin.HandlerFunc {
+func Logger(log *logger.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		startedAt := time.Now()
 

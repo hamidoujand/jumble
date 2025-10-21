@@ -37,7 +37,7 @@ func init() {
 	}
 }
 
-func Error(log logger.Logger) gin.HandlerFunc {
+func Error(log *logger.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Next() // Process the request first.
 

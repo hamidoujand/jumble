@@ -15,7 +15,6 @@ import (
 	"github.com/hamidoujand/jumble/internal/domains/user/bus"
 	"github.com/hamidoujand/jumble/internal/errs"
 	"github.com/hamidoujand/jumble/internal/page"
-	"github.com/hamidoujand/jumble/pkg/logger"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -26,7 +25,6 @@ type handler struct {
 	issuer      string
 	tokenMaxAge time.Duration
 	tracer      trace.Tracer
-	logger      logger.Logger
 }
 
 func (h *handler) CreateUser(c *gin.Context) {

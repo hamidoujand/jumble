@@ -15,7 +15,7 @@ import (
 
 type handler struct {
 	db    *sqlx.DB
-	log   logger.Logger
+	log   *logger.Logger
 	build string
 }
 

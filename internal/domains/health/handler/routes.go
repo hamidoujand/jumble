@@ -9,7 +9,7 @@ import (
 
 type Conf struct {
 	DB    *sqlx.DB
-	Log   logger.Logger
+	Log   *logger.Logger
 	Build string
 }
 

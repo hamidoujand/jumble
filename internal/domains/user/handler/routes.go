@@ -19,7 +19,7 @@ type Conf struct {
 	Issuer      string
 	TokenMaxAge time.Duration
 	Tracer      trace.Tracer
-	Logger      logger.Logger
+	Logger      *logger.Logger
 }
 
 // RegisterRoutes takes the mux and register endpoints on it.
